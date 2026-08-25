@@ -1,0 +1,6 @@
+{
+  "name": "My AI Model",
+  "description": "A modern consumer AI assistant for conversation, multi-modal analysis, reasoning, research, projects, and creative work.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
