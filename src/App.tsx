@@ -70,10 +70,27 @@ export default function App() {
   );
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
 
-  // UI state
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // UI state - initialize closed on mobile/tablet (< 1024px), open on desktop (>= 1024px)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return false;
+  });
   const [isArtifactPanelOpen, setIsArtifactPanelOpen] = useState(false);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
+
+  // Auto-adapt sidebar on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      // If resizing across breakpoint, ensure proper overlay vs static behavior
+      if (window.innerWidth < 768 && isSidebarOpen) {
+        // Can stay as toggled by user
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isSidebarOpen]);
 
   // Modals state
   const [isProjectsModalOpen, setIsProjectsModalOpen] = useState(false);
@@ -323,10 +340,16 @@ export default function App() {
 
     setConversations((prev) => [newConv, ...prev]);
     setActiveConversationId(newConv.id);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
   };
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
   };
 
   const handleDeleteConversation = (id: string) => {
@@ -832,7 +855,7 @@ export default function App() {
   const isCurrentConversationEmpty = currentConversation.messages.length === 0;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0d0d0d] text-gray-200">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#0d0d0d] text-gray-200">
       {/* 1. Left Sidebar */}
       <Sidebar
         isOpen={isSidebarOpen}

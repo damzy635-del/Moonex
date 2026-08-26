@@ -124,78 +124,78 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     >
       <div
         id="settings-modal-dialog"
-        className="relative flex h-[85vh] max-h-[680px] w-full max-w-3xl flex-col md:flex-row overflow-hidden rounded-2xl border border-gray-800 bg-[#171717] shadow-2xl text-gray-200"
+        className="relative flex h-[90vh] md:h-[85vh] max-h-[680px] w-full max-w-3xl flex-col md:flex-row overflow-hidden rounded-2xl border border-gray-800 bg-[#171717] shadow-2xl text-gray-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Navigation Sidebar */}
-        <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 bg-[#141414] p-3 flex flex-col justify-between shrink-0">
-          <div className="space-y-1">
-            <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+        <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 bg-[#141414] p-2 md:p-3 flex flex-row md:flex-col justify-between shrink-0 overflow-x-auto md:overflow-x-visible no-scrollbar">
+          <div className="flex md:flex-col gap-1 w-full shrink-0 md:shrink">
+            <div className="hidden md:block px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               Preferences
             </div>
 
             <button
               onClick={() => setActiveTab('profile')}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'profile'
                   ? 'bg-[#262626] text-white shadow-xs'
                   : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
               }`}
             >
-              <User className="h-4 w-4" />
+              <User className="h-4 w-4 shrink-0" />
               <span>Profile & Tone</span>
             </button>
 
             <button
               onClick={() => setActiveTab('account')}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'account'
                   ? 'bg-[#262626] text-white shadow-xs'
                   : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
               }`}
             >
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
               <span>Account & Cloud</span>
             </button>
 
             <button
               onClick={() => setActiveTab('model')}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'model'
                   ? 'bg-[#262626] text-white shadow-xs'
                   : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
               }`}
             >
-              <Sparkles className="h-4 w-4" />
+              <Sparkles className="h-4 w-4 shrink-0" />
               <span>Model & Behavior</span>
             </button>
 
             <button
               onClick={() => setActiveTab('voice')}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'voice'
                   ? 'bg-[#262626] text-white shadow-xs'
                   : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
               }`}
             >
-              <Volume2 className="h-4 w-4" />
+              <Volume2 className="h-4 w-4 shrink-0" />
               <span>Voice & Audio</span>
             </button>
 
             <button
               onClick={() => setActiveTab('data')}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'data'
                   ? 'bg-[#262626] text-white shadow-xs'
                   : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
               }`}
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-4 w-4 shrink-0" />
               <span>Data & Backup</span>
             </button>
           </div>
 
-          <div className="px-2 py-2 text-[10px] text-gray-500 border-t border-gray-800">
+          <div className="hidden md:block px-2 py-2 text-[10px] text-gray-500 border-t border-gray-800">
             My AI Model Consumer v3.7
           </div>
         </div>

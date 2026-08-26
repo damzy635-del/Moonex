@@ -367,9 +367,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         {/* Bottom Bar: Action Pills and Send Button */}
-        <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-gray-800/40">
+        <div className="flex items-center justify-between gap-2 px-2.5 sm:px-3 pb-2 pt-1 border-t border-gray-800/40">
           {/* Left: Quick Mode Buttons & Attachments */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
             {/* Attach File Button */}
             <input
               type="file"
@@ -389,7 +389,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 }
                 fileInputRef.current?.click();
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
               title="Attach images, PDFs, CSVs, or code files"
             >
               <Paperclip className="h-4 w-4" />
@@ -407,7 +407,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   }
                   onOpenPromptLibrary();
                 }}
-                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-950/40 hover:text-indigo-300 transition-all border border-indigo-900/30"
+                className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-950/40 hover:text-indigo-300 transition-all border border-indigo-900/30 whitespace-nowrap"
                 title="Browse Prompt Templates & Snippets"
               >
                 <BookOpen className="h-3.5 w-3.5" />
@@ -426,7 +426,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 }
                 onToggleThinking();
               }}
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-all ${
+              className={`flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                 enableThinking
                   ? 'bg-purple-950/70 text-purple-300 border border-purple-800'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
@@ -448,7 +448,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 }
                 onToggleWebSearch();
               }}
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-all ${
+              className={`flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                 enableWebSearch
                   ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-800'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
@@ -461,11 +461,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
             {/* Tone Selector Pill */}
             {onChangeTone && (
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowToneMenu(!showToneMenu)}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors whitespace-nowrap"
                   title="Adjust response tone"
                 >
                   <Sliders className="h-3 w-3 text-indigo-400" />
@@ -510,7 +510,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               type="button"
               id="btn-voice-dictation"
               onClick={toggleSpeechRecognition}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
                 isListening
                   ? 'bg-rose-950 text-rose-400 animate-pulse border border-rose-800'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
@@ -526,7 +526,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
 
           {/* Right: Character Count + Send / Stop Button */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {content.length > 0 && (
               <span className="hidden sm:inline-block text-[10px] text-gray-500 font-mono">
                 {content.length} chars

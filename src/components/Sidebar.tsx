@@ -139,10 +139,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile/Tablet Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden"
           onClick={onCloseMobileSidebar}
         />
       )}
@@ -150,8 +150,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Main Sidebar Container */}
       <aside
         id="app-sidebar"
-        className={`fixed md:static inset-y-0 left-0 z-40 flex flex-col w-72 bg-[#171717] border-r border-gray-800 backdrop-blur-md transition-transform duration-200 ease-in-out text-gray-200 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:-translate-x-full md:hidden'
+        className={`fixed lg:static inset-y-0 left-0 z-40 flex flex-col w-72 max-w-[85vw] bg-[#171717] border-r border-gray-800 backdrop-blur-md transition-transform duration-200 ease-in-out text-gray-200 shadow-2xl lg:shadow-none ${
+          isOpen ? 'translate-x-0' : '-translate-x-full lg:-translate-x-full lg:hidden'
         }`}
       >
         {/* Brand & New Chat Header */}

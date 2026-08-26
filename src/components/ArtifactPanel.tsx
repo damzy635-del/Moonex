@@ -189,16 +189,25 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({
   };
 
   return (
-    <aside
-      id="artifacts-canvas-panel"
-      className={`fixed md:relative inset-y-0 right-0 z-40 flex flex-col bg-[#171717] border-l border-gray-800 shadow-2xl md:shadow-none transition-all duration-200 text-gray-200 ${
-        isMaximized
-          ? 'fixed inset-0 z-50 w-full'
-          : activeTab === 'split'
-          ? 'w-full sm:w-[600px] lg:w-[840px] xl:w-[980px]'
-          : 'w-full sm:w-[480px] lg:w-[560px] xl:w-[640px]'
-      }`}
-    >
+    <>
+      {/* Mobile/Tablet Backdrop */}
+      {!isMaximized && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        id="artifacts-canvas-panel"
+        className={`fixed lg:relative inset-y-0 right-0 z-50 lg:z-auto flex flex-col bg-[#171717] border-l border-gray-800 shadow-2xl lg:shadow-none transition-all duration-200 text-gray-200 ${
+          isMaximized
+            ? 'fixed inset-0 z-50 w-full'
+            : activeTab === 'split'
+            ? 'w-full sm:w-[560px] md:w-[640px] lg:w-[840px] xl:w-[980px]'
+            : 'w-full sm:w-[480px] md:w-[540px] lg:w-[540px] xl:w-[620px]'
+        }`}
+      >
       {/* Canvas Header */}
       <div className="flex h-14 items-center justify-between border-b border-gray-800 px-4 bg-[#141414]">
         <div className="flex items-center gap-2 truncate">
@@ -490,5 +499,6 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({
         )}
       </div>
     </aside>
+    </>
   );
 };
