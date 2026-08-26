@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useTransition } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Conversation,
   Message,
@@ -48,6 +48,9 @@ import { ProjectsModal } from './components/ProjectsModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AuthModal } from './components/AuthModal';
+import { CommandPalette } from './components/CommandPalette';
+import { ShortcutsModal } from './components/ShortcutsModal';
+import { PromptLibraryModal } from './components/PromptLibraryModal';
 
 export default function App() {
   const { user, isAnonymous } = useAuth();
@@ -79,6 +82,9 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
   const [activeProjectIdForModal, setActiveProjectIdForModal] = useState<string | undefined>();
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(false);
 
   // Streaming & Generation state
   const [isStreaming, setIsStreaming] = useState(false);
@@ -93,7 +99,6 @@ export default function App() {
 
   // Scroll ref
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Cloud Sync on Authenticated User
   useEffect(() => {
@@ -170,7 +175,6 @@ export default function App() {
     } else if (preferences.theme === 'light') {
       root.classList.remove('dark');
     } else {
-      // System preference
       if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
         root.classList.add('dark');
       } else {
@@ -207,6 +211,83 @@ export default function App() {
     }
   }, [preferences, user, isAnonymous]);
 
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is currently typing in an input or textarea (unless meta/ctrl key is pressed)
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // Cmd+K / Ctrl+K: Open Command Palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+P / Ctrl+P: Open Prompt Library
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        setIsPromptLibraryOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+B / Ctrl+B: Toggle Sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+/ / Ctrl+/: Keyboard Shortcuts
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setIsShortcutsModalOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd+Shift+O: New Conversation
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+        e.preventDefault();
+        handleNewConversation();
+        return;
+      }
+
+      // Cmd+Shift+R: Deep Research
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+        e.preventDefault();
+        if (!user || isAnonymous) {
+          setAuthModalMode('signin');
+          setIsAuthModalOpen(true);
+        } else {
+          setIsResearchModalOpen(true);
+        }
+        return;
+      }
+
+      // Cmd+,: Settings
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        setIsSettingsModalOpen((prev) => !prev);
+        return;
+      }
+
+      // Escape: Close any open modal
+      if (e.key === 'Escape') {
+        setIsCommandPaletteOpen(false);
+        setIsShortcutsModalOpen(false);
+        setIsPromptLibraryOpen(false);
+        setIsProjectsModalOpen(false);
+        setIsResearchModalOpen(false);
+        setIsSettingsModalOpen(false);
+        setIsAuthModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [user, isAnonymous]);
+
   // Get current active conversation
   const currentConversation =
     conversations.find((c) => c.id === activeConversationId) ||
@@ -225,18 +306,6 @@ export default function App() {
   useEffect(() => {
     scrollToBottom(true);
   }, [currentConversation.messages.length, streamingContent]);
-
-  // Keyboard shortcut for Cmd+K (New Chat)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        handleNewConversation();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Actions
   const handleNewConversation = (projectId?: string) => {
@@ -326,6 +395,10 @@ export default function App() {
     );
   };
 
+  const handleChangeTone = (tone: UserPreferences['tone']) => {
+    setPreferences((prev) => ({ ...prev, tone }));
+  };
+
   const handleClearConversation = () => {
     if (confirm('Clear all messages in this conversation?')) {
       setConversations((prev) =>
@@ -360,6 +433,65 @@ export default function App() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // Pin message in current conversation
+  const handleTogglePinMessage = (messageId: string) => {
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== activeConversationId) return c;
+        const updatedMsgs = c.messages.map((m) =>
+          m.id === messageId ? { ...m, isPinned: !m.isPinned } : m
+        );
+        return { ...c, messages: updatedMsgs };
+      })
+    );
+  };
+
+  // Fork / Branch conversation at specific message
+  const handleBranchConversation = (messageId: string) => {
+    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);
+    if (msgIndex === -1) return;
+
+    const branchedMessages = currentConversation.messages.slice(0, msgIndex + 1);
+    const branchedConv: Conversation = {
+      id: `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      title: `Branch: ${currentConversation.title.slice(0, 24)}`,
+      messages: branchedMessages,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      projectId: currentConversation.projectId,
+      model: currentConversation.model,
+      thinkingLevel: currentConversation.thinkingLevel,
+      enableWebSearch: currentConversation.enableWebSearch,
+    };
+
+    setConversations((prev) => [branchedConv, ...prev]);
+    setActiveConversationId(branchedConv.id);
+  };
+
+  // Edit an earlier user message & resubmit from that point
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    if (!user || isAnonymous) {
+      setAuthModalMode('signin');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);
+    if (msgIndex === -1) return;
+
+    const targetMsg = currentConversation.messages[msgIndex];
+    // Keep messages strictly prior to this message
+    const trimmed = currentConversation.messages.slice(0, msgIndex);
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId ? { ...c, messages: trimmed } : c
+      )
+    );
+
+    // Resubmit with new content
+    handleSendMessage(newContent, targetMsg.files || []);
   };
 
   // Main chat sending & streaming method
@@ -551,7 +683,6 @@ export default function App() {
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.log('Stream generation aborted by user.');
-        // Still save partial output if any
         if (streamingContent.trim()) {
           const assistantMessage: Message = {
             id: `msg_asst_${Date.now()}`,
@@ -614,7 +745,6 @@ export default function App() {
     const msgs = currentConversation.messages;
     if (msgs.length === 0) return;
 
-    // Find last user message
     let lastUserMsgIndex = -1;
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {
@@ -625,7 +755,6 @@ export default function App() {
 
     if (lastUserMsgIndex !== -1) {
       const userMsg = msgs[lastUserMsgIndex];
-      // Trim messages to before this user message and re-send
       const trimmed = msgs.slice(0, lastUserMsgIndex);
       setConversations((prev) =>
         prev.map((c) =>
@@ -637,7 +766,7 @@ export default function App() {
   };
 
   // Text-to-Speech audio reader
-  const handleSpeakText = async (text: string) => {
+  const handleSpeakText = async (text: string, playbackRate: number = 1) => {
     if (!user || isAnonymous) {
       setAuthModalMode('signin');
       setIsAuthModalOpen(true);
@@ -652,7 +781,6 @@ export default function App() {
     setIsPlayingAudio(true);
 
     try {
-      // First try high-quality Neural Gemini TTS
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -665,17 +793,20 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.audioBase64) {
-          await playPcmAudio(data.audioBase64, data.sampleRate || 24000);
+          await playPcmAudio(data.audioBase64, data.sampleRate || 24000, playbackRate);
           setIsPlayingAudio(false);
           return;
         }
       }
       throw new Error('Fallback to Web Speech');
     } catch (e) {
-      // Fallback to Native Web Speech
-      const cancelNative = speakTextNative(text, () => {
-        setIsPlayingAudio(false);
-      });
+      const cancelNative = speakTextNative(
+        text,
+        () => {
+          setIsPlayingAudio(false);
+        },
+        playbackRate
+      );
       stopAudioCallbackRef.current = cancelNative;
     }
   };
@@ -737,6 +868,9 @@ export default function App() {
           setAuthModalMode(mode || 'signin');
           setIsAuthModalOpen(true);
         }}
+        onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
 
       {/* 2. Main Chat / Workspace Column */}
@@ -773,27 +907,26 @@ export default function App() {
             setAuthModalMode(mode || 'signin');
             setIsAuthModalOpen(true);
           }}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
         />
 
-        {/* Middle Scrollable Chat Messages Container */}
+        {/* Chat Scroll Area or Welcome Hero */}
         <main
-          ref={chatContainerRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col"
+          id="chat-scroll-container"
+          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col justify-between"
         >
           {isCurrentConversationEmpty ? (
             <WelcomeView
-              userName={preferences.userName}
-              onSelectPrompt={(prompt, thinking, search) => {
-                if (!user || isAnonymous) {
-                  setAuthModalMode('signin');
-                  setIsAuthModalOpen(true);
-                  return;
-                }
-                if (thinking !== undefined) {
+              preferences={preferences}
+              onSelectPrompt={(prompt, model, thinking, search) => {
+                if (model) handleSelectModel(model);
+                if (thinking) {
                   setConversations((prev) =>
                     prev.map((c) =>
                       c.id === activeConversationId
-                        ? { ...c, thinkingLevel: thinking ? 'high' : 'none' }
+                        ? { ...c, thinkingLevel: 'high' }
                         : c
                     )
                   );
@@ -821,6 +954,9 @@ export default function App() {
                   onSpeak={handleSpeakText}
                   isPlayingAudio={isPlayingAudio}
                   onStopAudio={handleStopAudio}
+                  onEditMessage={handleEditMessage}
+                  onTogglePinMessage={handleTogglePinMessage}
+                  onBranchConversation={handleBranchConversation}
                 />
               ))}
 
@@ -860,6 +996,9 @@ export default function App() {
               setAuthModalMode('signin');
               setIsAuthModalOpen(true);
             }}
+            onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)}
+            currentTone={preferences.tone}
+            onChangeTone={handleChangeTone}
           />
         </footer>
       </div>
@@ -869,9 +1008,82 @@ export default function App() {
         artifact={activeArtifact}
         isOpen={isArtifactPanelOpen}
         onClose={() => setIsArtifactPanelOpen(false)}
+        onSendRefactorPrompt={(prompt) => {
+          handleSendMessage(prompt, []);
+        }}
       />
 
-      {/* 4. Modals */}
+      {/* 4. Global Modals */}
+      {/* Command Palette (⌘K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        conversations={conversations}
+        availableModels={availableModels}
+        projects={projects}
+        currentModel={currentConversation.model}
+        enableThinking={currentConversation.thinkingLevel !== 'none'}
+        enableSearch={currentConversation.enableWebSearch}
+        onSelectConversation={(id) => {
+          handleSelectConversation(id);
+          setIsCommandPaletteOpen(false);
+        }}
+        onSelectModel={(modelId) => {
+          handleSelectModel(modelId);
+          setIsCommandPaletteOpen(false);
+        }}
+        onNewChat={() => {
+          handleNewConversation();
+          setIsCommandPaletteOpen(false);
+        }}
+        onToggleThinking={handleToggleThinking}
+        onToggleSearch={handleToggleSearch}
+        onOpenSettings={() => {
+          setIsCommandPaletteOpen(false);
+          setIsSettingsModalOpen(true);
+        }}
+        onOpenResearch={() => {
+          setIsCommandPaletteOpen(false);
+          if (!user || isAnonymous) {
+            setAuthModalMode('signin');
+            setIsAuthModalOpen(true);
+          } else {
+            setIsResearchModalOpen(true);
+          }
+        }}
+        onOpenProjects={() => {
+          setIsCommandPaletteOpen(false);
+          setIsProjectsModalOpen(true);
+        }}
+        onOpenPromptLibrary={() => {
+          setIsCommandPaletteOpen(false);
+          setIsPromptLibraryOpen(true);
+        }}
+        onOpenShortcuts={() => {
+          setIsCommandPaletteOpen(false);
+          setIsShortcutsModalOpen(true);
+        }}
+        onToggleTheme={handleToggleTheme}
+        onExportChat={handleExportConversation}
+        onClearChat={handleClearConversation}
+      />
+
+      {/* Shortcuts Modal (⌘/) */}
+      <ShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
+
+      {/* Prompt Library Modal (⌘P) */}
+      <PromptLibraryModal
+        isOpen={isPromptLibraryOpen}
+        onClose={() => setIsPromptLibraryOpen(false)}
+        onSelectPrompt={(promptText) => {
+          setIsPromptLibraryOpen(false);
+          handleSendMessage(promptText, []);
+        }}
+      />
+
       {/* Auth Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}

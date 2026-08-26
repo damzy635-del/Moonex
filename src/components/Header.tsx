@@ -16,8 +16,10 @@ import {
   LogOut,
   User as UserIcon,
   Cloud,
-  CloudCheck,
   CheckCircle2,
+  BookOpen,
+  Keyboard,
+  Command,
 } from 'lucide-react';
 import { Conversation, Project, ModelInfo, UserPreferences } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -40,6 +42,9 @@ interface HeaderProps {
   onExportConversation: () => void;
   onOpenProject: (projectId: string) => void;
   onOpenAuth: (mode?: 'signin' | 'signup') => void;
+  onOpenCommandPalette?: () => void;
+  onOpenPromptLibrary?: () => void;
+  onOpenShortcuts?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -60,6 +65,9 @@ export const Header: React.FC<HeaderProps> = ({
   onExportConversation,
   onOpenProject,
   onOpenAuth,
+  onOpenCommandPalette,
+  onOpenPromptLibrary,
+  onOpenShortcuts,
 }) => {
   const { user, isAnonymous, logout } = useAuth();
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -89,10 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Left section: Sidebar toggle & Title / Project badge */}
       <div className="flex items-center gap-2 sm:gap-3 overflow-hidden">
         <button
+          type="button"
           id="btn-toggle-sidebar"
           onClick={onToggleSidebar}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800/80 hover:text-white transition-colors"
-          title={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          title={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar (⌘B)'}
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -100,6 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Model Selector Pill */}
         <div className="relative">
           <button
+            type="button"
             id="btn-model-selector"
             onClick={() => setShowModelMenu(!showModelMenu)}
             className="flex items-center gap-2 rounded-lg border border-gray-800 bg-[#171717] px-2.5 py-1.5 text-xs sm:text-sm font-medium text-gray-200 hover:bg-gray-800 transition-all shadow-xs"
@@ -136,6 +146,7 @@ export const Header: React.FC<HeaderProps> = ({
                     return (
                       <button
                         key={m.id}
+                        type="button"
                         onClick={() => {
                           onSelectModel(m.id);
                           setShowModelMenu(false);
@@ -168,9 +179,26 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
+        {/* Command Palette Quick Search Button */}
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className="hidden lg:flex items-center gap-2 rounded-lg border border-gray-800/80 bg-[#141414] px-2.5 py-1 text-xs text-gray-400 hover:border-gray-700 hover:text-gray-200 transition-colors"
+            title="Search conversations, models, actions (⌘K)"
+          >
+            <Search className="h-3.5 w-3.5 text-gray-500" />
+            <span>Quick search...</span>
+            <kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-mono text-gray-400">
+              ⌘K
+            </kbd>
+          </button>
+        )}
+
         {/* Project Link Badge if in project */}
         {activeProject && (
           <button
+            type="button"
             onClick={() => onOpenProject(activeProject.id)}
             className="hidden md:flex items-center gap-1.5 rounded-md bg-amber-950/40 border border-amber-900/50 px-2 py-1 text-xs font-medium text-amber-300 hover:bg-amber-950/70 transition-colors"
           >
@@ -184,6 +212,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-1 sm:gap-1.5">
         {/* Thinking Mode Toggle Pill */}
         <button
+          type="button"
           id="btn-toggle-thinking"
           onClick={onToggleThinking}
           className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
@@ -199,6 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Web Search Toggle Pill */}
         <button
+          type="button"
           id="btn-toggle-web-search"
           onClick={onToggleSearch}
           className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
@@ -214,6 +244,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Deep Research Button */}
         <button
+          type="button"
           id="btn-open-deep-research"
           onClick={onOpenResearch}
           className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-950/50 transition-colors"
@@ -223,8 +254,22 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Research</span>
         </button>
 
+        {/* Prompt Library */}
+        {onOpenPromptLibrary && (
+          <button
+            type="button"
+            id="btn-open-prompts"
+            onClick={onOpenPromptLibrary}
+            className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800/80 hover:text-white transition-colors"
+            title="Prompt Library & Snippets (⌘P)"
+          >
+            <BookOpen className="h-4 w-4" />
+          </button>
+        )}
+
         {/* Canvas / Artifacts Panel Toggle */}
         <button
+          type="button"
           id="btn-toggle-artifacts-panel"
           onClick={onToggleArtifactPanel}
           className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
@@ -239,6 +284,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Export Chat */}
         <button
+          type="button"
           id="btn-export-chat"
           onClick={onExportConversation}
           className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800/80 hover:text-white transition-colors"
@@ -249,6 +295,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Clear / New Chat */}
         <button
+          type="button"
           id="btn-clear-chat"
           onClick={onClearConversation}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-rose-950/60 hover:text-rose-400 transition-colors"
@@ -259,10 +306,11 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Settings button */}
         <button
+          type="button"
           id="btn-open-settings"
           onClick={onOpenSettings}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800/80 hover:text-white transition-colors"
-          title="Settings & Preferences"
+          title="Settings & Preferences (,)"
         >
           <SlidersHorizontal className="h-4 w-4" />
         </button>
@@ -271,6 +319,7 @@ export const Header: React.FC<HeaderProps> = ({
         {user && !isAnonymous ? (
           <div className="relative ml-1">
             <button
+              type="button"
               id="btn-user-header-menu"
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-950/40 p-1 hover:border-indigo-400 transition-all"
@@ -313,7 +362,21 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <div className="space-y-0.5">
+                    {onOpenShortcuts && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onOpenShortcuts();
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      >
+                        <Keyboard className="h-3.5 w-3.5" />
+                        <span>Keyboard Shortcuts</span>
+                      </button>
+                    )}
                     <button
+                      type="button"
                       onClick={() => {
                         setShowUserMenu(false);
                         onOpenSettings();
@@ -324,6 +387,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>Account Settings</span>
                     </button>
                     <button
+                      type="button"
                       onClick={async () => {
                         setShowUserMenu(false);
                         await logout();
@@ -340,6 +404,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         ) : (
           <button
+            type="button"
             id="btn-header-signin"
             onClick={() => onOpenAuth('signin')}
             className="ml-1 flex items-center gap-1.5 rounded-lg border border-indigo-600/60 bg-indigo-600/20 px-2.5 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-600 hover:text-white transition-all shadow-xs"
@@ -352,4 +417,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

@@ -11,8 +11,11 @@ import {
   FileText,
   Lock,
   LogIn,
+  BookOpen,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
-import { FileAttachment } from '../types';
+import { FileAttachment, UserPreferences } from '../types';
 
 interface ChatInputProps {
   onSendMessage: (content: string, files: FileAttachment[]) => void;
@@ -25,6 +28,9 @@ interface ChatInputProps {
   selectedModelName: string;
   isAuthenticated?: boolean;
   onRequireAuth?: () => void;
+  onOpenPromptLibrary?: () => void;
+  currentTone?: UserPreferences['tone'];
+  onChangeTone?: (tone: UserPreferences['tone']) => void;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -38,11 +44,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   selectedModelName: _selectedModelName,
   isAuthenticated = true,
   onRequireAuth,
+  onOpenPromptLibrary,
+  currentTone = 'balanced',
+  onChangeTone,
 }) => {
   const [content, setContent] = useState('');
   const [files, setFiles] = useState<FileAttachment[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showToneMenu, setShowToneMenu] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -229,6 +239,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const tones: Array<{ id: UserPreferences['tone']; label: string }> = [
+    { id: 'concise', label: 'Concise' },
+    { id: 'balanced', label: 'Balanced' },
+    { id: 'explanatory', label: 'Explanatory' },
+    { id: 'technical', label: 'Technical' },
+    { id: 'creative', label: 'Creative' },
+  ];
+
   return (
     <div
       className="relative w-full max-w-3xl mx-auto px-3 sm:px-4 pb-3 sm:pb-5"
@@ -323,16 +341,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </button>
           </div>
         ) : (
-          <textarea
-            ref={textareaRef}
-            id="chat-textarea"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything, write code, analyze documents, or brainstorm..."
-            rows={1}
-            className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-hidden max-h-[220px]"
-          />
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              id="chat-textarea"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything, write code, analyze documents, or brainstorm..."
+              rows={1}
+              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-hidden max-h-[220px]"
+            />
+            {/* Dictation Live Wave Indicator */}
+            {isListening && (
+              <div className="flex items-center gap-2 px-4 pb-2 text-xs text-rose-400 font-medium">
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-1 bg-rose-400 rounded-full animate-pulse" />
+                  <span className="h-3.5 w-1 bg-rose-400 rounded-full animate-pulse" style={{ animationDelay: '100ms' }} />
+                  <span className="h-2 w-1 bg-rose-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
+                </span>
+                <span>Listening... speak now</span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Bottom Bar: Action Pills and Send Button */}
@@ -364,9 +395,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <Paperclip className="h-4 w-4" />
             </button>
 
+            {/* Prompt Templates Library Button */}
+            {onOpenPromptLibrary && (
+              <button
+                type="button"
+                id="btn-prompt-library"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    onRequireAuth?.();
+                    return;
+                  }
+                  onOpenPromptLibrary();
+                }}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-950/40 hover:text-indigo-300 transition-all border border-indigo-900/30"
+                title="Browse Prompt Templates & Snippets"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Templates</span>
+              </button>
+            )}
+
             {/* Thinking Pill */}
             <button
               type="button"
+              id="btn-toggle-thinking"
               onClick={() => {
                 if (!isAuthenticated) {
                   onRequireAuth?.();
@@ -379,7 +431,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   ? 'bg-purple-950/70 text-purple-300 border border-purple-800'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
               }`}
-              title="Deep Thinking chain-of-thought"
+              title="Deep Thinking chain-of-thought reasoning"
             >
               <BrainCircuit className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Thinking</span>
@@ -388,6 +440,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             {/* Web Search Pill */}
             <button
               type="button"
+              id="btn-toggle-search"
               onClick={() => {
                 if (!isAuthenticated) {
                   onRequireAuth?.();
@@ -405,6 +458,52 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <Globe className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
             </button>
+
+            {/* Tone Selector Pill */}
+            {onChangeTone && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowToneMenu(!showToneMenu)}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                  title="Adjust response tone"
+                >
+                  <Sliders className="h-3 w-3 text-indigo-400" />
+                  <span className="capitalize text-[11px] hidden md:inline">{currentTone}</span>
+                </button>
+
+                {showToneMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowToneMenu(false)}
+                    />
+                    <div className="absolute bottom-full left-0 mb-1 w-36 rounded-xl border border-gray-800 bg-[#171717] p-1.5 shadow-xl z-50 animate-in fade-in zoom-in-95">
+                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                        Response Tone
+                      </div>
+                      {tones.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            onChangeTone(t.id);
+                            setShowToneMenu(false);
+                          }}
+                          className={`w-full flex items-center justify-between rounded-lg px-2 py-1 text-xs text-left transition-colors ${
+                            currentTone === t.id
+                              ? 'bg-indigo-600/20 text-indigo-300 font-semibold'
+                              : 'text-gray-300 hover:bg-gray-800'
+                          }`}
+                        >
+                          <span>{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Voice Dictation Button */}
             <button
@@ -426,8 +525,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </button>
           </div>
 
-          {/* Right: Send / Stop Generation Button */}
-          <div className="flex items-center gap-1.5">
+          {/* Right: Character Count + Send / Stop Button */}
+          <div className="flex items-center gap-2">
+            {content.length > 0 && (
+              <span className="hidden sm:inline-block text-[10px] text-gray-500 font-mono">
+                {content.length} chars
+              </span>
+            )}
+
             {isStreaming ? (
               <button
                 type="button"
@@ -460,4 +565,3 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     </div>
   );
 };
-

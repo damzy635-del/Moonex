@@ -390,16 +390,26 @@ async function generateContentWithRetryAndFallback(
 // 3. Deep Research Workflow API
 app.post("/api/research", async (req: Request, res: Response) => {
   try {
-    const { topic, focusAreas = [] } = req.body;
+    const { topic, focusAreas = [], searchScope = "general" } = req.body;
     if (!topic || !topic.trim()) {
       return res.status(400).json({ error: "Topic is required for research." });
     }
 
     const ai = getGenAI();
 
+    const scopeGuidance =
+      searchScope === "academic"
+        ? "Focus on peer-reviewed research, arXiv preprints, nature/science publications, and empirical STEM studies."
+        : searchScope === "tech"
+        ? "Focus on open-source repositories, engineering documentation, RFCs, GitHub discussions, and architecture whitepapers."
+        : searchScope === "finance"
+        ? "Focus on SEC regulatory filings, market quarterly analyses, earnings transcripts, and economic indicators."
+        : "Perform comprehensive, multi-domain search across authoritative global sources.";
+
     // Stage 1: Generate Research Plan
     const planPrompt = `You are a Principal Research Analyst. Break down the research topic into 3 key analytical sub-questions and formulate exact search queries.
 Topic: "${topic}"
+Research Domain Scope: ${searchScope} (${scopeGuidance})
 Additional Context: ${focusAreas.join(", ")}
 
 Respond with a clean markdown plan summarizing the hypothesis, search strategy, and key inquiry dimensions.`;
@@ -407,7 +417,7 @@ Respond with a clean markdown plan summarizing the hypothesis, search strategy, 
     const planResponse = await generateContentWithRetryAndFallback(ai, "gemini-3.7-flash", {
       contents: planPrompt,
       config: {
-        systemInstruction: "You are an elite research synthesizer. Formulate thorough research plans.",
+        systemInstruction: `You are an elite research synthesizer specialized in ${searchScope} investigations. Formulate thorough research plans.`,
       },
     });
 
@@ -415,6 +425,7 @@ Respond with a clean markdown plan summarizing the hypothesis, search strategy, 
 
     // Stage 2: Deep Grounded Search & Synthesis
     const deepPrompt = `Conduct comprehensive, multi-angle research on: "${topic}".
+Domain Focus: ${scopeGuidance}
 Investigate:
 1. Executive Summary & Core Dynamics
 2. Detailed Technical / Fact-Based Findings & Evidence
@@ -429,7 +440,7 @@ Ensure rigorous depth, citing verified facts and data points where applicable.`;
       config: {
         tools: [{ googleSearch: {} }],
         thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-        systemInstruction: "You are a lead investigator and research scientist. Produce exhaustive, publication-grade research reports with citations.",
+        systemInstruction: `You are a lead investigator and research scientist specializing in ${searchScope} analysis. Produce exhaustive, publication-grade research reports with citations.`,
       },
     });
 

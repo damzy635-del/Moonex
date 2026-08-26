@@ -32,6 +32,7 @@ export interface Message {
   artifacts?: Artifact[];
   modelUsed?: string;
   isError?: boolean;
+  isPinned?: boolean;
 }
 
 export interface Conversation {

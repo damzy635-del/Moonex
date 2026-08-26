@@ -15,11 +15,11 @@ import {
   Check,
   X,
   ChevronRight,
-  Download,
   Sparkles,
   LogIn,
-  LogOut,
   Cloud,
+  BookOpen,
+  Keyboard,
 } from 'lucide-react';
 import { Conversation, Project, UserPreferences } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +42,9 @@ interface SidebarProps {
   onToggleTheme: () => void;
   onCloseMobileSidebar: () => void;
   onOpenAuth: (mode?: 'signin' | 'signup') => void;
+  onOpenPromptLibrary?: () => void;
+  onOpenShortcuts?: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -62,6 +65,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
   onCloseMobileSidebar,
   onOpenAuth,
+  onOpenPromptLibrary,
+  onOpenShortcuts,
+  onOpenCommandPalette,
 }) => {
   const { user, isAnonymous } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,6 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* New Chat Primary Action Button */}
           <button
+            type="button"
             id="btn-new-chat"
             onClick={() => {
               onNewConversation();
@@ -182,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </kbd>
           </button>
 
-          {/* Search Bar */}
+          {/* Search Bar / Command Palette launcher */}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
             <input
@@ -197,10 +204,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Scrollable Middle Content: Projects & History */}
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 text-xs">
+          {/* Quick Tools Bar */}
+          <div className="space-y-1 px-1">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenResearch();
+                onCloseMobileSidebar();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg border border-indigo-900/40 bg-indigo-950/20 px-2.5 py-1.5 text-indigo-300 hover:bg-indigo-950/50 transition-colors font-medium"
+            >
+              <Compass className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Deep Research Agent</span>
+            </button>
+
+            {onOpenPromptLibrary && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenPromptLibrary();
+                  onCloseMobileSidebar();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-gray-800/70 hover:text-white transition-colors"
+              >
+                <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Prompt Library</span>
+              </button>
+            )}
+          </div>
+
           {/* Projects Section */}
           <div>
             <div className="flex items-center justify-between px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
               <button
+                type="button"
                 onClick={() => setShowProjectsList(!showProjectsList)}
                 className="flex items-center gap-1 hover:text-gray-200"
               >
@@ -212,6 +249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
               </button>
               <button
+                type="button"
                 onClick={onOpenProjectsModal}
                 className="hover:text-gray-200 p-0.5 rounded"
                 title="Manage projects"
@@ -225,6 +263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {projects.map((proj) => (
                   <button
                     key={proj.id}
+                    type="button"
                     onClick={() => {
                       onSelectProject(proj.id);
                       onCloseMobileSidebar();
@@ -242,20 +281,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Quick Actions: Deep Research Tool */}
-          <div className="px-1">
-            <button
-              onClick={() => {
-                onOpenResearch();
-                onCloseMobileSidebar();
-              }}
-              className="flex w-full items-center gap-2 rounded-lg border border-indigo-900/60 bg-indigo-950/40 px-2.5 py-1.5 text-indigo-300 hover:bg-indigo-950/70 transition-colors font-medium"
-            >
-              <Compass className="h-3.5 w-3.5 text-indigo-400" />
-              <span>Deep Research Agent</span>
-            </button>
           </div>
 
           {/* History Groups */}
@@ -361,7 +386,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
 
             {filteredConversations.length === 0 && (
-              <div className="py-8 text-center text-neutral-400">
+              <div className="py-8 text-center text-gray-500 text-xs">
                 No conversations found.
               </div>
             )}
@@ -372,6 +397,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-2 border-t border-gray-800 flex flex-col gap-1 text-xs">
           {user && !isAnonymous ? (
             <button
+              type="button"
               id="btn-user-profile-settings"
               onClick={() => {
                 onOpenSettings();
@@ -402,6 +428,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           ) : (
             <button
+              type="button"
               id="btn-sidebar-signin"
               onClick={() => {
                 onOpenAuth('signin');
@@ -418,18 +445,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
 
           <div className="flex items-center justify-between pt-1">
-            <button
-              onClick={() => {
-                onOpenSettings();
-                onCloseMobileSidebar();
-              }}
-              className="flex items-center gap-1.5 p-1.5 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800/80 transition-colors text-xs"
-            >
-              <Settings className="h-3.5 w-3.5" />
-              <span>Settings</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenSettings();
+                  onCloseMobileSidebar();
+                }}
+                className="flex items-center gap-1.5 p-1.5 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800/80 transition-colors text-xs"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                <span>Settings</span>
+              </button>
+
+              {onOpenShortcuts && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenShortcuts();
+                    onCloseMobileSidebar();
+                  }}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800/80 transition-colors"
+                  title="Keyboard Shortcuts"
+                >
+                  <Keyboard className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
 
             <button
+              type="button"
               id="btn-toggle-theme"
               onClick={onToggleTheme}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800/80 transition-colors"
@@ -524,6 +569,7 @@ const ConversationGroup: React.FC<ConversationGroupProps> = ({
                 {/* Hover action buttons */}
                 <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onTogglePin(conv.id);
@@ -538,6 +584,7 @@ const ConversationGroup: React.FC<ConversationGroupProps> = ({
                     />
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => onStartRename(conv, e)}
                     className="p-1 text-gray-400 hover:text-gray-200 rounded"
                     title="Rename"
@@ -545,6 +592,7 @@ const ConversationGroup: React.FC<ConversationGroupProps> = ({
                     <Edit2 className="h-3 w-3" />
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onDelete(conv.id);

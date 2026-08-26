@@ -14,6 +14,11 @@ import {
   Loader2,
   FileText,
   MessageSquare,
+  Filter,
+  GraduationCap,
+  Cpu,
+  TrendingUp,
+  Globe2,
 } from 'lucide-react';
 import { DeepResearchResult } from '../types';
 
@@ -22,6 +27,33 @@ interface DeepResearchModalProps {
   onClose: () => void;
   onContinueInChat: (report: string) => void;
 }
+
+const RESEARCH_SCOPES = [
+  {
+    id: 'general',
+    label: 'All Web Sources',
+    desc: 'Comprehensive multi-domain web search',
+    icon: Globe2,
+  },
+  {
+    id: 'academic',
+    label: 'Academic & Science',
+    desc: 'Prioritize arXiv, peer-reviewed literature, Nature, IEEE',
+    icon: GraduationCap,
+  },
+  {
+    id: 'tech',
+    label: 'Tech & Engineering',
+    desc: 'Prioritize GitHub, developer docs, RFCs, StackOverflow',
+    icon: Cpu,
+  },
+  {
+    id: 'finance',
+    label: 'Business & Markets',
+    desc: 'Prioritize financial reports, SEC filings, economic data',
+    icon: TrendingUp,
+  },
+];
 
 const RESEARCH_SUGGESTIONS = [
   'Comparative study of modern Vector Databases (Pinecone vs Milvus vs Qdrant vs pgvector) for 10M+ scale',
@@ -36,6 +68,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
   onContinueInChat,
 }) => {
   const [topic, setTopic] = useState('');
+  const [selectedScope, setSelectedScope] = useState('general');
   const [focusAreaInput, setFocusAreaInput] = useState('');
   const [focusAreas, setFocusAreas] = useState<string[]>([]);
   const [status, setStatus] = useState<'idle' | 'planning' | 'searching' | 'synthesizing' | 'completed'>('idle');
@@ -78,6 +111,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         body: JSON.stringify({
           topic: topic.trim(),
           focusAreas,
+          searchScope: selectedScope,
         }),
       });
 
@@ -165,10 +199,48 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                 />
               </div>
 
+              {/* Research Scope Presets */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5 flex items-center gap-1">
+                  <Filter className="h-3 w-3 text-indigo-400" />
+                  <span>Domain Scope & Focus</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {RESEARCH_SCOPES.map((scope) => {
+                    const isSelected = selectedScope === scope.id;
+                    const IconComp = scope.icon;
+                    return (
+                      <button
+                        key={scope.id}
+                        type="button"
+                        onClick={() => setSelectedScope(scope.id)}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'border-indigo-500/80 bg-indigo-950/40 text-white shadow-xs'
+                            : 'border-gray-800 bg-[#1f1f1f] text-gray-300 hover:bg-gray-800'
+                        }`}
+                      >
+                        <div
+                          className={`p-1.5 rounded-lg ${
+                            isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'
+                          }`}
+                        >
+                          <IconComp className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="truncate">
+                          <div className="font-semibold text-xs text-gray-100">{scope.label}</div>
+                          <div className="text-[10px] text-gray-400 truncate">{scope.desc}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Focus Areas */}
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">
-                  Key Angles / Focus Areas (Optional)
+                  Key Angles / Specific Sub-Topics (Optional)
                 </label>
                 <div className="flex gap-2 mb-2">
                   <input
@@ -181,7 +253,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                         handleAddFocusArea();
                       }
                     }}
-                    placeholder="e.g. Cost efficiency, Security implications, Latency"
+                    placeholder="e.g. Cost efficiency, Security implications, Latency benchmarks"
                     className="flex-1 rounded-lg border border-gray-800 bg-[#1f1f1f] px-3 py-1.5 text-xs text-gray-100 placeholder:text-gray-500 focus:border-indigo-500 focus:outline-hidden"
                   />
                   <button
@@ -214,7 +286,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
               </div>
 
               {/* Suggested Topics */}
-              <div className="pt-2">
+              <div className="pt-1">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   Example Research Queries
                 </span>
@@ -253,6 +325,9 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                 <p className="text-xs text-gray-400 max-w-sm">
                   Investigating: <span className="font-medium text-gray-200">"{topic}"</span>
                 </p>
+                <span className="inline-block rounded bg-indigo-950/80 border border-indigo-800 px-2 py-0.5 text-[10px] font-mono text-indigo-300 uppercase">
+                  Scope: {selectedScope}
+                </span>
               </div>
 
               {/* 3 Step Visual Pipeline */}
@@ -264,7 +339,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                   )}
                   <span className="text-xs font-medium text-gray-200">
-                    1. Formulating Inquiry Plan & Search Queries
+                    1. Formulating Inquiry Plan & Search Strategy
                   </span>
                 </div>
 
@@ -277,7 +352,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                     <div className="h-4 w-4 rounded-full border border-gray-600" />
                   )}
                   <span className="text-xs font-medium text-gray-200">
-                    2. Searching Web & Grounding Live Data Sources
+                    2. Searching Web & Grounding Authoritative Sources
                   </span>
                 </div>
 
@@ -288,7 +363,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                     <div className="h-4 w-4 rounded-full border border-gray-600" />
                   )}
                   <span className="text-xs font-medium text-gray-200">
-                    3. Synthesizing Deep Publication Briefing
+                    3. Synthesizing Deep Executive Briefing
                   </span>
                 </div>
               </div>

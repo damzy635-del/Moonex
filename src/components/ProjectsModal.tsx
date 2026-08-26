@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   X,
   Plus,
@@ -11,6 +11,8 @@ import {
   Edit2,
   BookOpen,
   Layers,
+  Gauge,
+  Info,
 } from 'lucide-react';
 import { Project, ProjectKnowledgeItem } from '../types';
 
@@ -44,6 +46,24 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
   const [knowledgeBase, setKnowledgeBase] = useState<ProjectKnowledgeItem[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Compute token metrics for active knowledge base
+  const kbMetrics = useMemo(() => {
+    const currentList = isEditing ? knowledgeBase : selectedProject?.knowledgeBase || [];
+    const totalBytes = currentList.reduce((acc, doc) => acc + (doc.size || 0), 0);
+    const totalChars = currentList.reduce((acc, doc) => acc + (doc.content?.length || 0), 0);
+    const estimatedTokens = Math.ceil(totalChars / 4);
+    const maxTokens = 1000000; // 1M context window
+    const percentage = Math.min(100, Math.max(0.1, (estimatedTokens / maxTokens) * 100));
+
+    return {
+      docCount: currentList.length,
+      totalBytes,
+      totalChars,
+      estimatedTokens,
+      percentage: percentage.toFixed(2),
+    };
+  }, [selectedProject, knowledgeBase, isEditing]);
 
   if (!isOpen) return null;
 
@@ -132,7 +152,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
     >
       <div
         id="projects-modal-dialog"
-        className="relative flex h-[85vh] max-h-[700px] w-full max-w-4xl flex-col md:flex-row overflow-hidden rounded-2xl border border-gray-800 bg-[#171717] shadow-2xl text-gray-200"
+        className="relative flex h-[85vh] max-h-[720px] w-full max-w-4xl flex-col md:flex-row overflow-hidden rounded-2xl border border-gray-800 bg-[#171717] shadow-2xl text-gray-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left Column: Projects Sidebar */}
@@ -176,7 +196,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
                       <span className="truncate">{p.name}</span>
                     </div>
                     <span className="rounded bg-[#1f1f1f] border border-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">
-                      {p.knowledgeBase.length}
+                      {p.knowledgeBase.length} docs
                     </span>
                   </button>
                 );
@@ -235,6 +255,32 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
                   >
                     <X className="h-5 w-5" />
                   </button>
+                </div>
+              </div>
+
+              {/* Context Usage Bar Widget */}
+              <div className="rounded-xl border border-gray-800 bg-[#141414] p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between font-mono text-[11px] text-gray-400">
+                  <div className="flex items-center gap-1.5 text-gray-200 font-medium">
+                    <Gauge className="h-3.5 w-3.5 text-indigo-400" />
+                    <span>Context Window Consumption</span>
+                  </div>
+                  <span>
+                    ~{kbMetrics.estimatedTokens.toLocaleString()} / 1,000,000 tokens ({kbMetrics.percentage}%)
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+                    style={{ width: `${Math.max(1, parseFloat(kbMetrics.percentage))}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-gray-500">
+                  <span>{kbMetrics.docCount} Knowledge Items</span>
+                  <span>{(kbMetrics.totalBytes / 1024).toFixed(1)} KB Total Data</span>
                 </div>
               </div>
 
@@ -319,36 +365,39 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
                   </div>
 
                   <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-xl border border-gray-800 p-2 bg-[#121212]">
-                    {knowledgeBase.length === 0 ? (
+                    {(isEditing ? knowledgeBase : selectedProject.knowledgeBase).length === 0 ? (
                       <div className="py-4 text-center text-xs text-gray-500">
                         No documents added yet.
                       </div>
                     ) : (
-                      knowledgeBase.map((doc) => (
-                        <div
-                          key={doc.id}
-                          className="flex items-center justify-between rounded-lg bg-[#1a1a1a] px-3 py-2 text-xs border border-gray-800"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <FileText className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                            <span className="font-medium text-gray-200 truncate">
-                              {doc.name}
-                            </span>
-                            <span className="text-[10px] text-gray-400">
-                              ({(doc.size / 1024).toFixed(1)} KB)
-                            </span>
-                          </div>
+                      (isEditing ? knowledgeBase : selectedProject.knowledgeBase).map((doc) => {
+                        const estimatedDocTokens = Math.ceil((doc.content?.length || 0) / 4);
+                        return (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between rounded-lg bg-[#1a1a1a] px-3 py-2 text-xs border border-gray-800"
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <FileText className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                              <span className="font-medium text-gray-200 truncate">
+                                {doc.name}
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-mono">
+                                ({(doc.size / 1024).toFixed(1)} KB • ~{estimatedDocTokens} tokens)
+                              </span>
+                            </div>
 
-                          {isEditing && (
-                            <button
-                              onClick={() => handleRemoveDoc(doc.id)}
-                              className="text-gray-400 hover:text-rose-400 rounded p-1"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      ))
+                            {isEditing && (
+                              <button
+                                onClick={() => handleRemoveDoc(doc.id)}
+                                className="text-gray-400 hover:text-rose-400 rounded p-1"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
