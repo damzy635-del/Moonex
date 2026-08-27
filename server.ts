@@ -92,7 +92,62 @@ const AVAILABLE_MODELS = [
   },
 ];
 
-// Helper to determine if an error is transient (503 UNAVAILABLE, 429 rate limit, high demand)
+// My AI unified API client — chat, research, and code/run now route
+// through here instead of calling Gemini directly. TTS still uses
+// getGenAI() below since My AI has no audio synthesis capability.
+const MYAI_API_URL = (process.env.MYAI_API_URL || "").replace(/\/$/, "");
+const MYAI_API_KEY = process.env.MYAI_API_KEY || "";
+
+function assertMyAIConfigured(): void {
+  if (!MYAI_API_URL || !MYAI_API_KEY) {
+    throw new Error(
+      "MYAI_API_URL and MYAI_API_KEY must be configured to use chat, research, or code features. " +
+      "See docs/MYAI_INTEGRATION.md."
+    );
+  }
+}
+
+// Translate a Moonex message ({role, content, files}) into My AI's
+// canonical message shape (string content, or a list of {type:"text"} /
+// {type:"image_url"} parts when files are attached — the same OpenAI-style
+// format My AI's unified API accepts natively).
+function toMyAIMessage(msg: any): { role: string; content: any } {
+  const role = msg.role === "assistant" || msg.role === "model" ? "assistant" : (msg.role === "system" ? "system" : "user");
+  const files = Array.isArray(msg.files) ? msg.files : [];
+
+  if (files.length === 0) {
+    return { role, content: msg.content && msg.content.trim() ? msg.content : " " };
+  }
+
+  const parts: any[] = [];
+  if (msg.content && msg.content.trim()) {
+    parts.push({ type: "text", text: msg.content });
+  }
+  for (const file of files) {
+    if (!file.data || !file.mimeType) continue;
+    // file.data may already be a full data URI, or just the raw base64
+    // payload depending on how the frontend captured it — handle both.
+    const url = file.data.startsWith("data:") ? file.data : `data:${file.mimeType};base64,${file.data}`;
+    parts.push({ type: "image_url", image_url: { url } });
+  }
+  if (parts.length === 0) {
+    parts.push({ type: "text", text: " " });
+  }
+  return { role, content: parts };
+}
+
+// gemini-3.7-flash-thinking isn't a real distinct model at the API level —
+// it's the base 3.7-flash model with thinking forced on, exactly mirroring
+// the model/thinking split this app already used when calling Gemini
+// directly. Preserved here so front-end model IDs don't need to change.
+function resolveMyAIModelAndThinking(model: string, thinkingLevel: string): { model: string; thinking_level: string | null } {
+  if (model === "gemini-3.7-flash-thinking") {
+    return { model: "gemini-3.7-flash", thinking_level: "high" };
+  }
+  return { model, thinking_level: thinkingLevel === "none" ? null : thinkingLevel };
+}
+
+
 function isTransientError(error: any): boolean {
   if (!error) return false;
   const status = error.status || error.code || error.statusCode;
@@ -145,6 +200,8 @@ app.post("/api/chat", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
+    assertMyAIConfigured();
+
     const {
       messages = [],
       model = "gemini-3.7-flash",
@@ -155,10 +212,9 @@ app.post("/api/chat", async (req: Request, res: Response) => {
       tone = "balanced", // 'concise' | 'balanced' | 'explanatory' | 'creative' | 'technical'
     } = req.body;
 
-    const ai = getGenAI();
-    const primaryModel = model === "gemini-3.7-flash-thinking" ? "gemini-3.7-flash" : model;
-
-    // Prepare system instructions with tone and project knowledge
+    // Prepare system instructions with tone and project knowledge — this
+    // prompt-engineering logic is unchanged from the direct-Gemini version;
+    // only which backend actually serves the request has changed.
     let combinedSystemInstruction = "You are My AI Model, an advanced, highly capable, and polished AI assistant built for consumers, professionals, researchers, and creators.\n";
     combinedSystemInstruction += "Always provide clean, accurate, and thoughtfully structured answers. Use Markdown formatting (headings, bullet points, bold text, code blocks, tables) to maximize readability.\n";
     combinedSystemInstruction += "When generating code, provide comprehensive, working code with language tags (e.g. ```typescript, ```python, ```html, ```css, ```json).\n";
@@ -188,162 +244,114 @@ app.post("/api/chat", async (req: Request, res: Response) => {
       combinedSystemInstruction += "=================================\nUse the above Project Knowledge whenever relevant to answer user questions accurately.\n";
     }
 
-    // Build the contents array for Gemini API
-    const formattedContents: any[] = [];
+    const myaiMessages = [
+      { role: "system", content: combinedSystemInstruction },
+      ...messages.map(toMyAIMessage),
+    ];
 
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      const role = msg.role === "assistant" || msg.role === "model" ? "model" : "user";
-      const parts: any[] = [];
+    const { model: resolvedModel, thinking_level } = resolveMyAIModelAndThinking(model, thinkingLevel);
 
-      // Add attached files/images if any
-      if (msg.files && Array.isArray(msg.files)) {
-        for (const file of msg.files) {
-          if (file.data && file.mimeType) {
-            const cleanBase64 = file.data.includes(";base64,")
-              ? file.data.split(";base64,")[1]
-              : file.data;
+    // Note: My AI's own server-side fallback/retry/circuit-breaker (built
+    // in Phases 5-6) replaces the manual per-model retry loop this handler
+    // used to run against Gemini directly — and it's a genuine upgrade,
+    // not just a lateral move: if the requested Gemini model/provider is
+    // unavailable, My AI can fall back across OpenAI/Groq/Mistral too, not
+    // just to other Gemini variants.
+    const upstreamResponse = await fetch(`${MYAI_API_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${MYAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: resolvedModel,
+        messages: myaiMessages,
+        stream: true,
+        enable_search: !!enableWebSearch,
+        thinking_level,
+      }),
+    });
 
-            parts.push({
-              inlineData: {
-                mimeType: file.mimeType,
-                data: cleanBase64,
-              },
-            });
-          }
-        }
+    if (!upstreamResponse.ok || !upstreamResponse.body) {
+      let detail = `My AI request failed (${upstreamResponse.status}).`;
+      try {
+        const errBody: any = await upstreamResponse.json();
+        detail = errBody?.detail || detail;
+      } catch {
+        // response body wasn't JSON — keep the generic message
       }
-
-      // Add text content
-      if (msg.content && msg.content.trim()) {
-        parts.push({ text: msg.content });
-      } else if (parts.length === 0) {
-        parts.push({ text: " " });
-      }
-
-      formattedContents.push({
-        role,
-        parts,
-      });
-    }
-
-    if (formattedContents.length === 0) {
-      formattedContents.push({
-        role: "user",
-        parts: [{ text: "Hello!" }],
-      });
-    }
-
-    // Tools configuration
-    const tools: any[] = [];
-    if (enableWebSearch) {
-      tools.push({ googleSearch: {} });
-    }
-
-    const fallbackCandidateModels = getFallbackModels(primaryModel);
-    let streamSucceeded = false;
-    let lastError: any = null;
-
-    // Try candidate models with retry backoff
-    for (const candidateModel of fallbackCandidateModels) {
-      if (streamSucceeded) break;
-
-      // Build model-specific config
-      const config: any = {
-        systemInstruction: combinedSystemInstruction,
-      };
-
-      if (tools.length > 0) {
-        config.tools = tools;
-      }
-
-      // Configure thinking level appropriately (only for gemini-3.7 models)
-      if (candidateModel.includes("gemini-3.7")) {
-        if (model === "gemini-3.7-flash-thinking" || thinkingLevel === "high") {
-          config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
-        } else if (thinkingLevel === "low") {
-          config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-        }
-      }
-
-      // Up to 2 retries per model if transient
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const responseStream = await ai.models.generateContentStream({
-            model: candidateModel,
-            contents: formattedContents,
-            config,
-          });
-
-          let fullText = "";
-          let groundingSources: any[] = [];
-
-          for await (const chunk of responseStream) {
-            const chunkText = chunk.text || "";
-            if (chunkText) {
-              fullText += chunkText;
-              res.write(`data: ${JSON.stringify({ type: "chunk", text: chunkText })}\n\n`);
-            }
-
-            const groundingChunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
-            if (groundingChunks && Array.isArray(groundingChunks) && groundingChunks.length > 0) {
-              groundingSources = groundingChunks
-                .filter((gc: any) => gc.web?.uri)
-                .map((gc: any) => ({
-                  title: gc.web.title || new URL(gc.web.uri).hostname,
-                  url: gc.web.uri,
-                }));
-            }
-          }
-
-          // Successfully streamed
-          res.write(
-            `data: ${JSON.stringify({
-              type: "done",
-              fullText,
-              groundingSources,
-              modelUsed: candidateModel,
-            })}\n\n`
-          );
-          res.end();
-          streamSucceeded = true;
-          break;
-        } catch (err: any) {
-          lastError = err;
-          console.warn(
-            `Attempt ${attempt + 1} with model ${candidateModel} failed:`,
-            err?.message || err
-          );
-
-          if (isTransientError(err) && attempt < 1) {
-            // Wait briefly with jitter before retry
-            await delay(600 + Math.random() * 400);
-            continue;
-          } else {
-            // Move to next candidate model
-            break;
-          }
-        }
-      }
-    }
-
-    if (!streamSucceeded) {
-      const userFriendlyMsg = isTransientError(lastError)
+      const friendly = upstreamResponse.status === 503
         ? "The AI model is currently experiencing high demand. Please try again in a few moments, or switch to a different model in the top bar."
-        : lastError?.message || "An unexpected error occurred while communicating with the AI service.";
-
-      res.write(`data: ${JSON.stringify({ type: "error", error: userFriendlyMsg })}\n\n`);
+        : detail;
+      res.write(`data: ${JSON.stringify({ type: "error", error: friendly })}\n\n`);
       res.end();
+      return;
     }
+
+    const reader = upstreamResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+    let groundingSources: any[] = [];
+    let modelUsed = resolvedModel;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // keep the last (possibly incomplete) line for next read
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+
+        let chunk: any;
+        try {
+          chunk = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+
+        if (chunk.error) {
+          res.write(`data: ${JSON.stringify({ type: "error", error: chunk.error.message || "Upstream error." })}\n\n`);
+          res.end();
+          return;
+        }
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (delta?.role) continue; // the leading role-announcement chunk carries no text
+        if (delta?.content) {
+          fullText += delta.content;
+          res.write(`data: ${JSON.stringify({ type: "chunk", text: delta.content })}\n\n`);
+        }
+
+        const meta = chunk.x_unified_api;
+        if (meta) {
+          if (meta.grounding_sources) groundingSources = meta.grounding_sources;
+          if (chunk.model) modelUsed = chunk.model;
+        }
+      }
+    }
+
+    res.write(
+      `data: ${JSON.stringify({
+        type: "done",
+        fullText,
+        groundingSources,
+        modelUsed,
+      })}\n\n`
+    );
+    res.end();
   } catch (error: any) {
     console.error("Top-level error in /api/chat:", error);
-    const userFriendlyMsg = isTransientError(error)
-      ? "The AI model is currently experiencing high demand. Please try again in a few moments."
-      : error?.message || "An unexpected error occurred while communicating with the AI service.";
-    res.write(`data: ${JSON.stringify({ type: "error", error: userFriendlyMsg })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "error", error: error?.message || "An unexpected error occurred while communicating with the AI service." })}\n\n`);
     res.end();
   }
 });
+
 
 // Generic robust content generation with retry and fallback
 async function generateContentWithRetryAndFallback(
