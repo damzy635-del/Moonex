@@ -599,49 +599,64 @@ export default function App() {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error('Failed to connect to My AI Model stream.');
+        let detail = `HTTP ${response.status}`;
+        try {
+          const raw = await response.text();
+          if (raw) detail += `: ${raw.slice(0, 800)}`;
+        } catch {
+          // Ignore body-read failures.
+        }
+        throw new Error(`Failed to connect to My AI Model stream (${detail}).`);
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let sseBuffer = '';
       let accumulatedText = '';
       let collectedSources: GroundingSource[] = [];
       let streamError: string | null = null;
       let effectiveModelUsed = currentConversation.model;
 
+      const processSSELine = (line: string) => {
+        const trimmed = line.trimEnd();
+        if (!trimmed.startsWith('data:')) return;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
+
+        try {
+          const event = JSON.parse(payload);
+          if (event.type === 'chunk') {
+            accumulatedText += event.text || '';
+            setStreamingContent(accumulatedText);
+          } else if (event.type === 'done') {
+            accumulatedText = event.fullText || accumulatedText;
+            if (event.modelUsed) effectiveModelUsed = event.modelUsed;
+            if (event.groundingSources && Array.isArray(event.groundingSources)) {
+              collectedSources = event.groundingSources;
+              setStreamingGrounding(collectedSources);
+            }
+          } else if (event.type === 'error') {
+            console.error('Stream returned error:', event.error);
+            streamError = event.error || 'The AI service returned an error. Please try again.';
+          }
+        } catch (e) {
+          console.warn('Ignoring malformed SSE event:', payload.slice(0, 200), e);
+        }
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const raw = decoder.decode(value, { stream: true });
-        const lines = raw.split('\n');
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split(/\r?\n/);
+        sseBuffer = lines.pop() || '';
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const event = JSON.parse(line.slice(6));
-              if (event.type === 'chunk') {
-                accumulatedText += event.text;
-                setStreamingContent(accumulatedText);
-              } else if (event.type === 'done') {
-                accumulatedText = event.fullText || accumulatedText;
-                if (event.modelUsed) {
-                  effectiveModelUsed = event.modelUsed;
-                }
-                if (event.groundingSources && Array.isArray(event.groundingSources)) {
-                  collectedSources = event.groundingSources;
-                  setStreamingGrounding(collectedSources);
-                }
-              } else if (event.type === 'error') {
-                console.error('Stream returned error:', event.error);
-                streamError = event.error || 'The model is currently experiencing high demand. Please try again.';
-              }
-            } catch (e) {
-              // Ignore line parse errors
-            }
-          }
-        }
+        for (const line of lines) processSSELine(line);
       }
+
+      sseBuffer += decoder.decode();
+      if (sseBuffer.trim()) processSSELine(sseBuffer);
 
       // If stream had an error and no text was produced
       if (streamError && !accumulatedText.trim()) {
