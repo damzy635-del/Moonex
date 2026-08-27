@@ -7,7 +7,7 @@ import { createServer as createViteServer } from "vite";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 // Support large payloads for uploaded documents and images
 app.use(express.json({ limit: "50mb" }));
@@ -193,11 +193,23 @@ app.get("/api/models", (_req: Request, res: Response) => {
 
 // 2. Chat Streaming API (Server-Sent Events)
 app.post("/api/chat", async (req: Request, res: Response) => {
-  // Set up SSE headers immediately
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  // Flush headers immediately so Vercel/proxies know this is a live stream.
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
+
+  const sendEvent = (payload: Record<string, any>) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    }
+  };
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(": keep-alive\n\n");
+  }, 15000);
 
   try {
     assertMyAIConfigured();
@@ -206,38 +218,35 @@ app.post("/api/chat", async (req: Request, res: Response) => {
       messages = [],
       model = "gemini-3.7-flash",
       enableWebSearch = false,
-      thinkingLevel = "none", // 'none' | 'low' | 'high'
+      thinkingLevel = "none",
       systemInstruction = "",
       projectKnowledge = [],
-      tone = "balanced", // 'concise' | 'balanced' | 'explanatory' | 'creative' | 'technical'
-    } = req.body;
+      tone = "balanced",
+    } = req.body || {};
 
-    // Prepare system instructions with tone and project knowledge — this
-    // prompt-engineering logic is unchanged from the direct-Gemini version;
-    // only which backend actually serves the request has changed.
+    if (!Array.isArray(messages)) {
+      sendEvent({ type: "error", error: "Invalid request: messages must be an array." });
+      return;
+    }
+
     let combinedSystemInstruction = "You are My AI Model, an advanced, highly capable, and polished AI assistant built for consumers, professionals, researchers, and creators.\n";
     combinedSystemInstruction += "Always provide clean, accurate, and thoughtfully structured answers. Use Markdown formatting (headings, bullet points, bold text, code blocks, tables) to maximize readability.\n";
     combinedSystemInstruction += "When generating code, provide comprehensive, working code with language tags (e.g. ```typescript, ```python, ```html, ```css, ```json).\n";
     combinedSystemInstruction += "If presenting a standalone document, code component, web preview, SVG, or artifact, frame it clearly with Markdown blocks.\n";
 
-    if (tone === "concise") {
-      combinedSystemInstruction += "\nTone: Be exceptionally direct, concise, and to-the-point without fluff.";
-    } else if (tone === "explanatory") {
-      combinedSystemInstruction += "\nTone: Provide detailed, step-by-step educational explanations with analogies and breakdowns.";
-    } else if (tone === "creative") {
-      combinedSystemInstruction += "\nTone: Be expressive, imaginative, vivid, and engaging in your prose.";
-    } else if (tone === "technical") {
-      combinedSystemInstruction += "\nTone: Highly technical, rigorous, precise, including specifications, edge cases, and architectural best practices.";
+    if (tone === "concise") combinedSystemInstruction += "\nTone: Be exceptionally direct, concise, and to-the-point without fluff.";
+    else if (tone === "explanatory") combinedSystemInstruction += "\nTone: Provide detailed, step-by-step educational explanations with analogies and breakdowns.";
+    else if (tone === "creative") combinedSystemInstruction += "\nTone: Be expressive, imaginative, vivid, and engaging in your prose.";
+    else if (tone === "technical") combinedSystemInstruction += "\nTone: Highly technical, rigorous, precise, including specifications, edge cases, and architectural best practices.";
+
+    if (systemInstruction && String(systemInstruction).trim()) {
+      combinedSystemInstruction += `\n\nCustom User Instructions:\n${String(systemInstruction).trim()}`;
     }
 
-    if (systemInstruction && systemInstruction.trim()) {
-      combinedSystemInstruction += `\n\nCustom User Instructions:\n${systemInstruction.trim()}`;
-    }
-
-    if (projectKnowledge && Array.isArray(projectKnowledge) && projectKnowledge.length > 0) {
+    if (Array.isArray(projectKnowledge) && projectKnowledge.length > 0) {
       combinedSystemInstruction += "\n\n=== PROJECT KNOWLEDGE CONTEXT ===\n";
       for (const item of projectKnowledge) {
-        if (item.name && item.content) {
+        if (item?.name && item?.content) {
           combinedSystemInstruction += `\n--- Document: ${item.name} ---\n${item.content}\n`;
         }
       }
@@ -250,18 +259,14 @@ app.post("/api/chat", async (req: Request, res: Response) => {
     ];
 
     const { model: resolvedModel, thinking_level } = resolveMyAIModelAndThinking(model, thinkingLevel);
+    const endpoint = `${MYAI_API_URL}/chat/completions`;
 
-    // Note: My AI's own server-side fallback/retry/circuit-breaker (built
-    // in Phases 5-6) replaces the manual per-model retry loop this handler
-    // used to run against Gemini directly — and it's a genuine upgrade,
-    // not just a lateral move: if the requested Gemini model/provider is
-    // unavailable, My AI can fall back across OpenAI/Groq/Mistral too, not
-    // just to other Gemini variants.
-    const upstreamResponse = await fetch(`${MYAI_API_URL}/chat/completions`, {
+    const upstreamResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${MYAI_API_KEY}`,
+        Authorization: `Bearer ${MYAI_API_KEY}`,
         "Content-Type": "application/json",
+        Accept: "text/event-stream",
       },
       body: JSON.stringify({
         model: resolvedModel,
@@ -273,18 +278,34 @@ app.post("/api/chat", async (req: Request, res: Response) => {
     });
 
     if (!upstreamResponse.ok || !upstreamResponse.body) {
-      let detail = `My AI request failed (${upstreamResponse.status}).`;
+      const status = upstreamResponse.status;
+      let detail = `My AI request failed with HTTP ${status}.`;
       try {
-        const errBody: any = await upstreamResponse.json();
-        detail = errBody?.detail || detail;
+        const raw = await upstreamResponse.text();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            detail = parsed?.detail || parsed?.error?.message || detail;
+          } catch {
+            detail = raw.slice(0, 1000);
+          }
+        }
       } catch {
-        // response body wasn't JSON — keep the generic message
+        // Keep the status-based detail.
       }
-      const friendly = upstreamResponse.status === 503
-        ? "The AI model is currently experiencing high demand. Please try again in a few moments, or switch to a different model in the top bar."
-        : detail;
-      res.write(`data: ${JSON.stringify({ type: "error", error: friendly })}\n\n`);
-      res.end();
+
+      const friendly =
+        status === 401 || status === 403
+          ? "My AI authentication failed. Check MYAI_API_KEY and make sure the key has the required chat scope."
+          : status === 404
+          ? "My AI endpoint was not found. Set MYAI_API_URL to the API base URL ending in /v1, not /chat/completions."
+          : status === 429
+          ? "My AI is rate-limiting this request. Please try again shortly."
+          : status === 503
+          ? "The AI model is currently experiencing high demand. Please try again in a few moments, or switch to another model."
+          : detail;
+
+      sendEvent({ type: "error", error: friendly, status });
       return;
     }
 
@@ -295,60 +316,68 @@ app.post("/api/chat", async (req: Request, res: Response) => {
     let groundingSources: any[] = [];
     let modelUsed = resolvedModel;
 
+    const processLine = (line: string) => {
+      const trimmed = line.trimEnd();
+      if (!trimmed.startsWith("data:")) return false;
+
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") return false;
+
+      let chunk: any;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        // A complete SSE line should be JSON, but ignore malformed upstream events.
+        return false;
+      }
+
+      if (chunk.error) {
+        sendEvent({ type: "error", error: chunk.error.message || String(chunk.error) || "Upstream AI error." });
+        return true;
+      }
+
+      const delta = chunk.choices?.[0]?.delta;
+      if (delta?.content) {
+        fullText += delta.content;
+        sendEvent({ type: "chunk", text: delta.content });
+      }
+
+      const meta = chunk.x_unified_api;
+      if (meta?.grounding_sources && Array.isArray(meta.grounding_sources)) {
+        groundingSources = meta.grounding_sources;
+      }
+      if (chunk.model) modelUsed = chunk.model;
+      return false;
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || ""; // keep the last (possibly incomplete) line for next read
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-
-        let chunk: any;
-        try {
-          chunk = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-
-        if (chunk.error) {
-          res.write(`data: ${JSON.stringify({ type: "error", error: chunk.error.message || "Upstream error." })}\n\n`);
-          res.end();
+        const hadError = processLine(line);
+        if (hadError) {
+          await reader.cancel();
           return;
-        }
-
-        const delta = chunk.choices?.[0]?.delta;
-        if (delta?.role) continue; // the leading role-announcement chunk carries no text
-        if (delta?.content) {
-          fullText += delta.content;
-          res.write(`data: ${JSON.stringify({ type: "chunk", text: delta.content })}\n\n`);
-        }
-
-        const meta = chunk.x_unified_api;
-        if (meta) {
-          if (meta.grounding_sources) groundingSources = meta.grounding_sources;
-          if (chunk.model) modelUsed = chunk.model;
         }
       }
     }
 
-    res.write(
-      `data: ${JSON.stringify({
-        type: "done",
-        fullText,
-        groundingSources,
-        modelUsed,
-      })}\n\n`
-    );
-    res.end();
+    buffer += decoder.decode();
+    if (buffer.trim()) processLine(buffer);
+
+    sendEvent({ type: "done", fullText, groundingSources, modelUsed });
   } catch (error: any) {
     console.error("Top-level error in /api/chat:", error);
-    res.write(`data: ${JSON.stringify({ type: "error", error: error?.message || "An unexpected error occurred while communicating with the AI service." })}\n\n`);
-    res.end();
+    const message = error?.message || "An unexpected error occurred while communicating with the AI service.";
+    sendEvent({ type: "error", error: message });
+  } finally {
+    clearInterval(heartbeat);
+    if (!res.writableEnded) res.end();
   }
 });
 
@@ -595,4 +624,14 @@ async function startServer() {
   });
 }
 
-startServer();
+// Export the Express app so Vercel can invoke it as a serverless function.
+export default app;
+
+// Local/Bun/Node development and traditional production server mode.
+// Vercel provides the HTTP listener itself, so never call listen() there.
+if (process.env.VERCEL !== "1") {
+  startServer().catch((error) => {
+    console.error("Failed to start My AI Model server:", error);
+    process.exit(1);
+  });
+}
