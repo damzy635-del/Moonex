@@ -6,7 +6,8 @@
   "framework": "vite",
   "functions": {
     "api/[...path].ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "server.cjs"
     }
   },
   "routes": [
