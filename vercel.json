@@ -5,9 +5,9 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/chat.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/chat.ts": { "maxDuration": 300 },
     "api/models.ts": { "maxDuration": 60, "includeFiles": "server.cjs" },
-    "api/health.ts": { "maxDuration": 60, "includeFiles": "server.cjs" },
+    "api/health.ts": { "maxDuration": 60 },
     "api/research.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
     "api/tts.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
     "api/code/run.ts": { "maxDuration": 300, "includeFiles": "server.cjs" }
