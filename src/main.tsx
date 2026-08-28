@@ -4,6 +4,8 @@ import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import './index.css';
 
+document.title = 'Moonex';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
