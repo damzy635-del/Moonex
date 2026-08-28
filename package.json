@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && mkdir -p src/.vercel && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=src/.vercel/server.cjs",
-    "start": "node src/.vercel/server.cjs",
-    "clean": "rm -rf dist src/.vercel server.js",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server.cjs",
+    "start": "node server.cjs",
+    "clean": "rm -rf dist server.cjs server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
