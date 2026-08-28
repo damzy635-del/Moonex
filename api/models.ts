@@ -1,3 +1,5 @@
+import { MOONEX_MODELS, resolveProviderModel, type ProviderModel } from '../lib/moonex-models';
+
 export const config = { maxDuration: 20 };
 
 export default async function handler(req: any, res: any) {
@@ -28,17 +30,22 @@ export default async function handler(req: any, res: any) {
     }
 
     const list = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
-    const models = list
-      .map((item: any) => {
-        if (typeof item === 'string') return { id: item, name: item };
-        if (!item?.id) return null;
-        return {
-          ...item,
-          id: String(item.id),
-          name: item.name || item.id,
-        };
-      })
+    const providers: ProviderModel[] = list
+      .map((item: any) => typeof item === 'string' ? { id: item } : item?.id ? { ...item, id: String(item.id) } : null)
       .filter(Boolean);
+
+    // Expose Moonex product names, not raw provider model IDs.
+    const models = MOONEX_MODELS.map((profile) => {
+      const provider = resolveProviderModel(profile, providers);
+      return {
+        id: profile.id,
+        name: profile.name,
+        description: profile.description,
+        temperature: profile.temperature,
+        maxTokens: profile.maxTokens,
+        available: !!provider,
+      };
+    }).filter((model) => model.available);
 
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({ models, defaultModel: models[0]?.id || null });
