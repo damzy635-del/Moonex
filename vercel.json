@@ -5,22 +5,21 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/[...path].ts": {
-      "maxDuration": 300,
-      "includeFiles": "server.cjs"
-    }
+    "api/chat.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/models.ts": { "maxDuration": 60, "includeFiles": "server.cjs" },
+    "api/health.ts": { "maxDuration": 60, "includeFiles": "server.cjs" },
+    "api/research.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/tts.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/code/run.ts": { "maxDuration": 300, "includeFiles": "server.cjs" }
   },
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/[...path].ts"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+    { "src": "^/api/chat$", "dest": "/api/chat.ts" },
+    { "src": "^/api/models$", "dest": "/api/models.ts" },
+    { "src": "^/api/health$", "dest": "/api/health.ts" },
+    { "src": "^/api/research$", "dest": "/api/research.ts" },
+    { "src": "^/api/tts$", "dest": "/api/tts.ts" },
+    { "src": "^/api/code/run$", "dest": "/api/code/run.ts" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
