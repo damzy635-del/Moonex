@@ -6,7 +6,7 @@ import {
   browserLocalPersistence,
   setPersistence,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App instance
@@ -20,7 +20,7 @@ setPersistence(auth, browserLocalPersistence).catch((err) => {
 });
 
 // Configure Google Provider
-export const googleProvider = new GoogleAuthProvider();
+aexport const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Configure Apple Provider
@@ -28,10 +28,10 @@ export const appleProvider = new OAuthProvider('apple.com');
 appleProvider.addScope('email');
 appleProvider.addScope('name');
 
-// Initialize Firestore (with databaseId support if defined)
+// Firestore is configured to ignore undefined optional fields. This is important
+// because Conversation/Message objects intentionally contain optional properties.
 export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+  ? initializeFirestore(app, { ignoreUndefinedProperties: true }, firebaseConfig.firestoreDatabaseId)
+  : initializeFirestore(app, { ignoreUndefinedProperties: true });
 
 export default app;
-
