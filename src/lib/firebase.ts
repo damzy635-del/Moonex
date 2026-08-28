@@ -20,7 +20,7 @@ setPersistence(auth, browserLocalPersistence).catch((err) => {
 });
 
 // Configure Google Provider
-aexport const googleProvider = new GoogleAuthProvider();
+export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Configure Apple Provider
