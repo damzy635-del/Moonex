@@ -1,4 +1,4 @@
-import app from "../server";
+import app from "../server.ts";
 
 // Catch-all Vercel function for the Express API.
 // This keeps /api/chat, /api/models, /api/research, /api/tts,
