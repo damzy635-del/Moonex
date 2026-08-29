@@ -1,4 +1,4 @@
-import { findMoonexModel, resolveProviderModel, type ProviderModel } from '../lib/moonex-models';
+import { findMoonexModel, resolveProviderModel, type ProviderModel } from '../lib/moonex-models.js';
 
 export const config = { maxDuration: 300 };
 
@@ -77,34 +77,27 @@ async function liveProviders(base: string, token: string): Promise<ProviderModel
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed. Use POST /api/chat.' }); return; }
-
   const limit = rateLimit(req);
   res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT));
   res.setHeader('X-RateLimit-Remaining', String(limit.remaining));
   if (!limit.allowed) { res.setHeader('Retry-After', String(limit.retryAfter)); res.status(429).json({ error: 'Too many chat requests. Please retry later.', retryAfter: limit.retryAfter }); return; }
-
   const base = baseUrl();
   const token = apiKey();
   if (!base || !token) { res.status(500).json({ error: 'Moonex AI backend is not configured. Set MYAI_API_URL and MYAI_API_KEY in Vercel.' }); return; }
-
   const body = req.body || {};
   const serialized = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(body);
   if (Buffer.byteLength(serialized, 'utf8') > MAX_BODY_BYTES) { res.status(413).json({ error: 'Request body is too large.' }); return; }
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length > MAX_MESSAGES) { res.status(400).json({ error: `Too many messages. Maximum is ${MAX_MESSAGES}.` }); return; }
-
   let providers: ProviderModel[] = [];
   try { providers = await liveProviders(base, token); } catch (error) { console.warn('Moonex model catalog lookup failed:', error); }
   if (!providers.length) { res.status(503).json({ error: 'No usable AI model is available from the configured My AI backend.' }); return; }
-
   const requested = typeof body.model === 'string' ? body.model.trim() : '';
   const profile = findMoonexModel(requested);
   const provider = resolveProviderModel(profile, providers);
   if (!provider) { res.status(503).json({ error: `No provider model is available for ${profile.name}.` }); return; }
-
   let converted;
   try { converted = messages.map(convertMessage); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); return; }
-
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -112,22 +105,12 @@ export default async function handler(req: any, res: any) {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
   const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': keep-alive\n\n'); }, 15000);
-
   try {
     const upstream = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify({
-        model: provider.id,
-        messages: [{ role: 'system', content: buildPrompt(body.systemInstruction, body.projectKnowledge, body.tone || 'balanced', profile.name) }, ...converted],
-        stream: true,
-        enable_search: !!body.enableWebSearch,
-        ...(body.thinkingLevel && body.thinkingLevel !== 'none' ? { thinking_level: body.thinkingLevel } : {}),
-        temperature: profile.temperature,
-        max_tokens: profile.maxTokens,
-      }),
+      body: JSON.stringify({ model: provider.id, messages: [{ role: 'system', content: buildPrompt(body.systemInstruction, body.projectKnowledge, body.tone || 'balanced', profile.name) }, ...converted], stream: true, enable_search: !!body.enableWebSearch, ...(body.thinkingLevel && body.thinkingLevel !== 'none' ? { thinking_level: body.thinkingLevel } : {}), temperature: profile.temperature, max_tokens: profile.maxTokens }),
     });
-
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text().catch(() => '');
       let detail = raw.slice(0, 1500) || `My AI returned HTTP ${upstream.status}.`;
@@ -135,7 +118,6 @@ export default async function handler(req: any, res: any) {
       send(res, { type: 'error', error: String(detail), status: upstream.status, moonexModel: profile.id });
       return;
     }
-
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
