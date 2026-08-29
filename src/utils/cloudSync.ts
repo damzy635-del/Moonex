@@ -16,11 +16,35 @@ import {
   getSavedProjects,
   saveProjects,
   getSavedPreferences,
-  savePreferences,
   INITIAL_CONVERSATION,
   INITIAL_PROJECT,
   DEFAULT_PREFERENCES,
 } from './storage';
+
+const MOONEX_DEFAULT_MODEL = 'moonex-lite-1.5';
+const isMoonexModel = (value: unknown): value is string =>
+  typeof value === 'string' && value.startsWith('moonex-');
+
+function normalizeConversation(conversation: Conversation): Conversation {
+  const model = isMoonexModel(conversation.model)
+    ? conversation.model
+    : MOONEX_DEFAULT_MODEL;
+
+  return {
+    ...conversation,
+    model,
+    messages: Array.isArray(conversation.messages)
+      ? conversation.messages.map((message) => ({
+          ...message,
+          // Legacy/provider IDs must never become the active UI model identity.
+          modelUsed:
+            message.role === 'assistant' && message.modelUsed && !isMoonexModel(message.modelUsed)
+              ? model
+              : message.modelUsed,
+        }))
+      : [],
+  };
+}
 
 // 1. Fetch all conversations for a user
 export async function fetchUserConversations(userId: string): Promise<Conversation[]> {
@@ -30,8 +54,7 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      // Seed with local or initial conversation
-      const localConvs = getSavedConversations();
+      const localConvs = getSavedConversations().map(normalizeConversation);
       for (const c of localConvs) {
         await syncConversationToCloud(userId, c);
       }
@@ -40,14 +63,20 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
 
     const cloudConvs: Conversation[] = [];
     snapshot.forEach((docSnap) => {
-      cloudConvs.push(docSnap.data() as Conversation);
+      cloudConvs.push(normalizeConversation(docSnap.data() as Conversation));
     });
 
     saveConversations(cloudConvs);
+
+    // Persist the normalized model IDs so old cloud data does not return on the next login.
+    for (const conversation of cloudConvs) {
+      await syncConversationToCloud(userId, conversation);
+    }
+
     return cloudConvs;
   } catch (error) {
     console.warn('Error fetching conversations from Firestore, using local cache:', error);
-    return getSavedConversations();
+    return getSavedConversations().map(normalizeConversation);
   }
 }
 
@@ -55,7 +84,7 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
 export async function syncConversationToCloud(userId: string, conversation: Conversation): Promise<void> {
   try {
     const docRef = doc(db, 'users', userId, 'conversations', conversation.id);
-    await setDoc(docRef, conversation, { merge: true });
+    await setDoc(docRef, normalizeConversation(conversation), { merge: true });
   } catch (error) {
     console.warn('Failed to sync conversation to cloud:', error);
   }
@@ -115,7 +144,7 @@ export async function deleteProjectFromCloud(userId: string, projectId: string):
     const docRef = doc(db, 'users', userId, 'projects', projectId);
     await deleteDoc(docRef);
   } catch (error) {
-    console.warn('Failed to delete project from cloud:', error);
+    console.warn('Failed to delete project from Firestore:', error);
   }
 }
 
