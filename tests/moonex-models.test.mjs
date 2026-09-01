@@ -38,10 +38,10 @@ test('Provider ranking prefers semantic model matches over array position', () =
   const profile = resolveMoonexProfile('moonex-code-1.5');
   const ranked = rankProviderModels(profile, [
     { id: 'unrelated-model', capabilities: { tools: true } },
-    { id: 'qwen-coder', capabilities: { tools: true } },
+    { id: 'codestral-latest', capabilities: { tools: true } },
     { id: 'another-model', capabilities: { tools: true } },
   ]);
-  assert.equal(ranked[0].id, 'qwen-coder');
+  assert.equal(ranked[0].id, 'codestral-latest');
 });
 
 test('Research routing excludes models without search capability', () => {
