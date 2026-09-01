@@ -66,7 +66,10 @@ export function rankProviderModels(profile: MoonexModelProfile, providers: Provi
         else if (id.includes(keyword)) score += 50;
         else if (haystack.includes(keyword)) score += 20;
       }
-      if (index === profile.fallbackIndex) score += 1;
+      // Preserve the upstream /models order when semantic scores tie. This
+      // keeps provider priority deterministic without secretly preferring a
+      // provider solely because its array position happens to equal the
+      // profile's historical fallbackIndex.
       return { provider, score, index };
     })
     .sort((a, b) => b.score - a.score || a.index - b.index)
