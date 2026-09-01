@@ -93,7 +93,7 @@ test('retryable upstream overload fails over to the next ranked provider', async
     const url = String(input);
     calls.push({ url, init });
     if (url.endsWith('/models')) return responseFor(JSON.stringify([
-      { id: 'unrelated-model', capabilities: allCapabilities },
+      { id: 'unrelated-model', capabilities: { vision: true, reasoning: true, search: false, tools: false } },
       { id: 'codestral-latest', capabilities: allCapabilities },
       { id: 'backup-coder', capabilities: allCapabilities },
     ]));
