@@ -16,6 +16,19 @@ export type MoonexModelProfile = {
   fallbackIndex: number;
 };
 
+export type AutoRoutingContext = {
+  messages?: Array<{
+    role?: string;
+    content?: unknown;
+    files?: Array<{ mimeType?: string; type?: string }>;
+  }>;
+  enableWebSearch?: boolean;
+  thinkingLevel?: string;
+};
+
+export const DEFAULT_MOONEX_MODEL_ID = 'moonex-lite-1.5';
+export const AUTO_MODEL_ID = 'auto';
+
 /**
  * Moonex is the product layer. Provider model IDs are deliberately kept out
  * of the public catalog and are resolved at request time from /models.
@@ -36,6 +49,19 @@ function normalizedProviderId(model: ProviderModel) {
   return `${model.id} ${model.name || ''}`.toLowerCase();
 }
 
+export function isMoonexModelId(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === AUTO_MODEL_ID || MOONEX_MODELS.some((model) => model.id === normalized);
+}
+
+/** Keep all persisted and request-level model state inside the Moonex namespace. */
+export function normalizeMoonexModelId(value: unknown, fallback = DEFAULT_MOONEX_MODEL_ID): string {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  return isMoonexModelId(normalized) ? normalized : fallback;
+}
+
 /** Pick a provider model using capabilities/name hints, then a stable index fallback. */
 export function resolveProviderModel(profile: MoonexModelProfile, providers: ProviderModel[]): ProviderModel | null {
   if (!providers.length) return null;
@@ -47,5 +73,67 @@ export function resolveProviderModel(profile: MoonexModelProfile, providers: Pro
 }
 
 export function findMoonexModel(id: string) {
-  return MOONEX_MODELS.find((model) => model.id === id) || MOONEX_MODELS[0];
+  const normalized = normalizeMoonexModelId(id);
+  return MOONEX_MODELS.find((model) => model.id === normalized) || MOONEX_MODELS[0];
+}
+
+function messageText(context: AutoRoutingContext): string {
+  return (context.messages || [])
+    .filter((message) => message.role !== 'system')
+    .map((message) => (typeof message.content === 'string' ? message.content : ''))
+    .join('\n')
+    .slice(-12_000)
+    .toLowerCase();
+}
+
+function hasImageAttachment(context: AutoRoutingContext): boolean {
+  return (context.messages || []).some((message) =>
+    (message.files || []).some((file) =>
+      String(file.mimeType || '').toLowerCase().startsWith('image/') || file.type === 'image'
+    )
+  );
+}
+
+/**
+ * Deterministic first-pass Auto routing. It selects a Moonex profile only;
+ * provider selection still happens later through resolveProviderModel().
+ */
+export function classifyMoonexTask(context: AutoRoutingContext): MoonexModelProfile {
+  const text = messageText(context);
+  const wordCount = text ? text.split(/\s+/).length : 0;
+  const isComplex = wordCount > 220 || text.length > 1_400;
+
+  if (hasImageAttachment(context)) return findMoonexModel('moonex-vision-1.5');
+
+  if (
+    context.enableWebSearch ||
+    /\b(latest|current|today|this week|news|research|sources?|citations?|look up|web search|recent)\b/.test(text)
+  ) {
+    return findMoonexModel('moonex-research-1.5');
+  }
+
+  if (
+    /\b(write|build|create|implement|refactor|debug|fix|code|coding|program|function|api|react|typescript|javascript|python|sql|authentication|auth|component|app|website|regex|css|html)\b/.test(text)
+  ) {
+    return findMoonexModel('moonex-code-1.5');
+  }
+
+  if (
+    context.thinkingLevel === 'high' ||
+    /\b(algorithm|algorithms|prove|proof|derive|architecture|trade-?offs?|analy[sz]e|complex|difficult|deeply|step[- ]by[- ]step|reason|logic|evaluate|critique|compare)\b/.test(text)
+  ) {
+    return findMoonexModel(isComplex || wordCount > 90 ? 'moonex-ultra-1.5' : 'moonex-reasoning-1.5');
+  }
+
+  if (/^[\s\d()+*/%=.?x×-]+$/.test(text) || wordCount <= 24) {
+    return findMoonexModel('moonex-lite-1.5');
+  }
+
+  return findMoonexModel(isComplex ? 'moonex-pro-1.5' : 'moonex-fast-1.5');
+}
+
+export function resolveMoonexProfile(modelId: string, context: AutoRoutingContext = {}): MoonexModelProfile {
+  return normalizeMoonexModelId(modelId) === AUTO_MODEL_ID
+    ? classifyMoonexTask(context)
+    : findMoonexModel(modelId);
 }
