@@ -118,10 +118,12 @@ test('streaming provider error objects are normalized instead of becoming [objec
 });
 
 test('retryable upstream overload fails over to the next ranked provider', async () => {
-  const calls: string[] = [];
   let chatAttempt = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    calls.push({ url, init });
     if (url.endsWith('/models')) {
       return responseFor(JSON.stringify([
         { id: 'unrelated-model' },
@@ -130,11 +132,7 @@ test('retryable upstream overload fails over to the next ranked provider', async
       ]));
     }
 
-    const body = JSON.parse(String(arguments));
-    void body;
     chatAttempt += 1;
-    const init = arguments;
-    void init;
     return new Response(
       chatAttempt === 1
         ? JSON.stringify({ error: { message: 'Spikes in demand are usually temporary.' } })
@@ -146,16 +144,18 @@ test('retryable upstream overload fails over to the next ranked provider', async
     );
   }) as typeof fetch;
 
-  // The fetch stub above intentionally tracks attempts; inspect the emitted stream for success.
   const response = makeResponse();
   await handler(request('moonex-code-1.5', 'Debug this API'), response);
   const stream = response.chunks.join('');
+  const firstBody = JSON.parse(String(calls[1].init?.body));
+  const secondBody = JSON.parse(String(calls[2].init?.body));
 
   assert.equal(chatAttempt, 2);
+  assert.equal(firstBody.model, 'qwen-coder');
+  assert.equal(secondBody.model, 'backup-coder');
   assert.match(stream, /fallback ok/);
   assert.match(stream, /"type":"done"/);
   assert.doesNotMatch(stream, /\[object Object\]/);
-  void calls;
 });
 
 test.after(() => {
