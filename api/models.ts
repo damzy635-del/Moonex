@@ -21,7 +21,7 @@ export default async function handler(req: any, res: any) {
     let payload: any = null;
     try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { raw: raw.slice(0, 1000) }; }
     if (!upstream.ok) {
-      const detail = payload?.detail || payload?.error?.message || payload?.error || `My AI returned HTTP ${upstream.status}.`;
+      const detail = payload?.detail || payload?.error?.message || payload?.error || `Moonex AI returned HTTP ${upstream.status}.`;
       res.status(upstream.status).json({ error: String(detail) });
       return;
     }
@@ -36,7 +36,20 @@ export default async function handler(req: any, res: any) {
       .map((item: any) => typeof item === 'string' ? { id: item } : item?.id ? { ...item, id: String(item.id) } : null)
       .filter(Boolean);
 
-    const models = MOONEX_MODELS.map((profile) => {
+    const models = [
+      {
+        id: 'auto',
+        name: 'Auto',
+        tagline: 'Moonex chooses the best profile for this task.',
+        description: 'Automatically routes each request to a Moonex model profile.',
+        contextWindow: 'Profile dependent',
+        supportsThinking: true,
+        supportsSearch: true,
+        supportsVision: true,
+        badge: 'Recommended',
+        available: true,
+      },
+      ...MOONEX_MODELS.map((profile) => {
       const provider = resolveProviderModel(profile, providers);
       const lower = profile.id.toLowerCase();
       const supportsVision = lower.includes('vision');
@@ -54,7 +67,8 @@ export default async function handler(req: any, res: any) {
         badge: lower.includes('lite') ? 'Fast' : lower.includes('ultra') ? 'Advanced' : lower.includes('pro') ? 'Pro' : undefined,
         available: !!provider,
       };
-    }).filter((model) => model.available);
+      }).filter((model) => model.available),
+    ];
 
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({ models, defaultModel: models[0]?.id || null });
