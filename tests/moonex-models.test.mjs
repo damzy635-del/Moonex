@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   AUTO_MODEL_ID,
   classifyMoonexTask,
+  decideMoonexRoute,
   normalizeMoonexModelId,
   rankProviderModels,
   resolveMoonexProfile,
@@ -36,10 +37,23 @@ test('Auto routes current-information requests to Moonex Research', () => {
 
 test('Provider ranking prefers semantic model matches over array position', () => {
   const profile = resolveMoonexProfile('moonex-code-1.5');
-  const ranked = rankProviderModels(profile, [
-    { id: 'unrelated-model' },
-    { id: 'qwen-coder' },
-    { id: 'another-model' },
-  ]);
+  const ranked = rankProviderModels(profile, [{ id: 'unrelated-model' }, { id: 'qwen-coder' }, { id: 'another-model' }]);
   assert.equal(ranked[0].id, 'qwen-coder');
+});
+
+test('Auto routing returns confidence and an explainable reason', () => {
+  const decision = decideMoonexRoute({ messages: [{ role: 'user', content: 'Debug this TypeScript API and refactor the authentication middleware' }] });
+  assert.equal(decision.mode, 'auto');
+  assert.equal(decision.profile.id, 'moonex-code-1.5');
+  assert.ok(decision.confidence >= 0.5 && decision.confidence <= 0.99);
+  assert.match(decision.reason, /technical|software/i);
+});
+
+test('Explicit manual selection bypasses automatic classification', () => {
+  assert.equal(resolveMoonexProfile('moonex-pro-1.5', { messages: [{ role: 'user', content: 'Write and debug Python code' }] }).id, 'moonex-pro-1.5');
+});
+
+test('Auto prioritizes vision and research signals before generic task scoring', () => {
+  assert.equal(decideMoonexRoute({ enableWebSearch: true, messages: [{ role: 'user', content: 'Explain this image' , files: [{ mimeType: 'image/jpeg', type: 'image' }] }] }).profile.id, 'moonex-vision-1.5');
+  assert.equal(decideMoonexRoute({ enableWebSearch: true, messages: [{ role: 'user', content: 'Find current research' }] }).profile.id, 'moonex-research-1.5');
 });
