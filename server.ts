@@ -3,6 +3,8 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI, ThinkingLevel, Modality } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import chatApiHandler from "./api/chat";
+import modelsApiHandler from "./api/models";
 
 dotenv.config();
 
@@ -184,7 +186,10 @@ function getFallbackModels(preferredModel: string): string[] {
 }
 
 // 1. Available Models API
-app.get("/api/models", (_req: Request, res: Response) => {
+app.get("/api/models", async (req: Request, res: Response) => {
+  await modelsApiHandler(req, res);
+  return;
+
   res.json({
     models: AVAILABLE_MODELS,
     defaultModel: "gemini-3.7-flash",
@@ -193,6 +198,9 @@ app.get("/api/models", (_req: Request, res: Response) => {
 
 // 2. Chat Streaming API (Server-Sent Events)
 app.post("/api/chat", async (req: Request, res: Response) => {
+  await chatApiHandler(req, res);
+  return;
+
   // Flush headers immediately so Vercel/proxies know this is a live stream.
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
