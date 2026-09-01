@@ -86,6 +86,7 @@ export interface UserPreferences {
 export interface ModelInfo {
   id: string;
   name: string;
+  isAuto?: boolean;
   tagline: string;
   description: string;
   contextWindow: string;

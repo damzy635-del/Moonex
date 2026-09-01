@@ -37,6 +37,12 @@ import {
 } from './utils/cloudSync';
 import { useAuth } from './context/AuthContext';
 import { playPcmAudio, speakTextNative, stopAllSpeech } from './utils/audio';
+import { normalizeMoonexModelId } from '../lib/moonex-models';
+import {
+  STATIC_MOONEX_MODEL_CATALOG,
+  getMoonexDisplayName,
+  mergeAvailableMoonexModels,
+} from './utils/modelPresentation';
 
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -68,7 +74,8 @@ export default function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
     getSavedPreferences()
   );
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  // Keep the client usable and label-stable before /api/models responds.
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>(STATIC_MOONEX_MODEL_CATALOG);
 
   // UI state - initialize closed on mobile/tablet (< 1024px), open on desktop (>= 1024px)
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
@@ -176,7 +183,7 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => {
         if (data.models && Array.isArray(data.models)) {
-          setAvailableModels(data.models);
+          setAvailableModels(mergeAvailableMoonexModels(data.models));
         }
       })
       .catch((err) => {
@@ -333,7 +340,7 @@ export default function App() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       projectId,
-      model: preferences.defaultModel || 'gemini-3.7-flash',
+      model: normalizeMoonexModelId(preferences.defaultModel),
       thinkingLevel: preferences.defaultThinkingLevel || 'none',
       enableWebSearch: preferences.defaultWebSearch || false,
     };
@@ -364,7 +371,7 @@ export default function App() {
         messages: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        model: preferences.defaultModel,
+        model: normalizeMoonexModelId(preferences.defaultModel),
         thinkingLevel: preferences.defaultThinkingLevel,
         enableWebSearch: preferences.defaultWebSearch,
       };
@@ -391,9 +398,10 @@ export default function App() {
   };
 
   const handleSelectModel = (modelId: string) => {
+    const canonicalModelId = normalizeMoonexModelId(modelId);
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === activeConversationId ? { ...c, model: modelId } : c
+        c.id === activeConversationId ? { ...c, model: canonicalModelId } : c
       )
     );
   };
@@ -439,7 +447,7 @@ export default function App() {
     let md = `# ${title}\n\nDate: ${new Date(currentConversation.createdAt).toLocaleString()}\nModel: ${currentConversation.model}\n\n---\n\n`;
 
     currentConversation.messages.forEach((msg) => {
-      const sender = msg.role === 'user' ? '### User' : '### My AI Model';
+      const sender = msg.role === 'user' ? '### User' : '### Moonex';
       md += `${sender} (${new Date(msg.timestamp).toLocaleTimeString()})\n\n${msg.content}\n\n`;
       if (msg.groundingSources && msg.groundingSources.length > 0) {
         md += `**Sources:**\n${msg.groundingSources.map((s) => `- [${s.title}](${s.url})`).join('\n')}\n\n`;
@@ -520,7 +528,8 @@ export default function App() {
   // Main chat sending & streaming method
   const handleSendMessage = async (
     text: string,
-    files: FileAttachment[] = []
+    files: FileAttachment[] = [],
+    modelOverride?: string,
   ) => {
     // Guest Restriction: Redirect guests and unauthenticated users to login
     if (!user || isAnonymous) {
@@ -530,6 +539,8 @@ export default function App() {
     }
 
     if ((!text.trim() && files.length === 0) || isStreaming) return;
+
+    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);
 
     // 1. Create User Message
     const userMessage: Message = {
@@ -555,6 +566,7 @@ export default function App() {
           ? {
               ...c,
               title: newTitle,
+              model: selectedModelId,
               messages: updatedMessages,
               updatedAt: Date.now(),
             }
@@ -576,11 +588,14 @@ export default function App() {
     setIsStreaming(true);
     setStreamingContent('');
     setStreamingGrounding([]);
-    setStreamingModel(currentConversation.model);
+    // Manual selections appear immediately. Auto is replaced by a resolved
+    // Moonex profile when the server emits its route event.
+    setStreamingModel(selectedModelId);
     const startTime = Date.now();
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let effectiveModelUsed = selectedModelId;
 
     try {
       const response = await fetch('/api/chat', {
@@ -588,7 +603,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedMessages,
-          model: currentConversation.model,
+          model: selectedModelId,
           enableWebSearch: currentConversation.enableWebSearch,
           thinkingLevel: currentConversation.thinkingLevel,
           systemInstruction,
@@ -606,7 +621,7 @@ export default function App() {
         } catch {
           // Ignore body-read failures.
         }
-        throw new Error(`Failed to connect to My AI Model stream (${detail}).`);
+        throw new Error(`Failed to connect to Moonex stream (${detail}).`);
       }
 
       const reader = response.body.getReader();
@@ -615,7 +630,6 @@ export default function App() {
       let accumulatedText = '';
       let collectedSources: GroundingSource[] = [];
       let streamError: string | null = null;
-      let effectiveModelUsed = currentConversation.model;
 
       const processSSELine = (line: string) => {
         const trimmed = line.trimEnd();
@@ -625,12 +639,18 @@ export default function App() {
 
         try {
           const event = JSON.parse(payload);
-          if (event.type === 'chunk') {
+          if (event.type === 'route') {
+            effectiveModelUsed = normalizeMoonexModelId(event.moonexModel, effectiveModelUsed);
+            setStreamingModel(effectiveModelUsed);
+          } else if (event.type === 'chunk') {
             accumulatedText += event.text || '';
             setStreamingContent(accumulatedText);
           } else if (event.type === 'done') {
             accumulatedText = event.fullText || accumulatedText;
-            if (event.modelUsed) effectiveModelUsed = event.modelUsed;
+            if (event.modelUsed) {
+              effectiveModelUsed = normalizeMoonexModelId(event.modelUsed, effectiveModelUsed);
+              setStreamingModel(effectiveModelUsed);
+            }
             if (event.groundingSources && Array.isArray(event.groundingSources)) {
               collectedSources = event.groundingSources;
               setStreamingGrounding(collectedSources);
@@ -665,7 +685,7 @@ export default function App() {
           role: 'assistant',
           content: streamError,
           timestamp: Date.now(),
-          modelUsed: currentConversation.model,
+          modelUsed: effectiveModelUsed,
           isError: true,
         };
 
@@ -727,7 +747,7 @@ export default function App() {
             role: 'assistant',
             content: `${streamingContent} *(Generation stopped)*`,
             timestamp: Date.now(),
-            modelUsed: currentConversation.model,
+            modelUsed: effectiveModelUsed,
           };
           setConversations((prev) =>
             prev.map((c) =>
@@ -748,7 +768,7 @@ export default function App() {
           role: 'assistant',
           content: errorContent,
           timestamp: Date.now(),
-          modelUsed: currentConversation.model,
+          modelUsed: effectiveModelUsed,
           isError: true,
         };
         setConversations((prev) =>
@@ -978,7 +998,7 @@ export default function App() {
                     )
                   );
                 }
-                handleSendMessage(prompt, []);
+                handleSendMessage(prompt, [], model);
               }}
             />
           ) : (
@@ -1004,7 +1024,9 @@ export default function App() {
                   message={{
                     id: 'streaming_msg',
                     role: 'assistant',
-                    content: streamingContent || 'Thinking and generating...',
+                    content:
+                      streamingContent ||
+                      `Thinking with ${getMoonexDisplayName(streamingModel)}...`,
                     timestamp: Date.now(),
                     modelUsed: streamingModel,
                     groundingSources: streamingGrounding,
@@ -1028,7 +1050,7 @@ export default function App() {
             onToggleThinking={handleToggleThinking}
             enableWebSearch={currentConversation.enableWebSearch}
             onToggleWebSearch={handleToggleSearch}
-            selectedModelName={currentConversation.model}
+            selectedModelName={getMoonexDisplayName(currentConversation.model)}
             isAuthenticated={!!user && !isAnonymous}
             onRequireAuth={() => {
               setAuthModalMode('signin');
@@ -1175,7 +1197,12 @@ export default function App() {
         preferences={preferences}
         availableModels={availableModels}
         onClose={() => setIsSettingsModalOpen(false)}
-        onSavePreferences={(newPrefs) => setPreferences(newPrefs)}
+        onSavePreferences={(newPrefs) =>
+          setPreferences({
+            ...newPrefs,
+            defaultModel: normalizeMoonexModelId(newPrefs.defaultModel),
+          })
+        }
         onReloadData={() => {
           setConversations(getSavedConversations());
           setProjects(getSavedProjects());
