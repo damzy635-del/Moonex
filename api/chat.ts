@@ -19,6 +19,7 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 20;
 const MAX_PROVIDER_ATTEMPTS = 3;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const DEFAULT_PROVIDER_MAX_TOKENS = 4096;
 const rateBuckets = new Map<string, { started: number; count: number }>();
 
 const baseUrl = () => (process.env.MYAI_API_URL || '').replace(/\/$/, '');
@@ -125,6 +126,22 @@ function errorText(value: unknown): string {
 function isRetryableError(status: number, message: string) {
   if (RETRYABLE_STATUS.has(status)) return true;
   return /overload|overloaded|spike in demand|temporarily unavailable|rate limit|too many requests|capacity/i.test(message);
+}
+
+function providerMaxTokens(provider: any): number {
+  const candidates = [
+    provider?.max_tokens,
+    provider?.maxTokens,
+    provider?.max_output_tokens,
+    provider?.maxOutputTokens,
+    provider?.limits?.max_tokens,
+    provider?.limits?.maxOutputTokens,
+  ];
+  for (const value of candidates) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+  return DEFAULT_PROVIDER_MAX_TOKENS;
 }
 
 async function liveProviders(base: string, token: string): Promise<any[]> {
@@ -244,6 +261,7 @@ export default async function handler(req: any, res: any) {
 
     for (let attempt = 0; attempt < candidates.length; attempt += 1) {
       const provider = candidates[attempt];
+      const maxTokens = Math.min(profile.maxTokens, providerMaxTokens(provider));
       let upstream: Response;
 
       try {
@@ -269,7 +287,7 @@ export default async function handler(req: any, res: any) {
               ? { thinking_level: body.thinkingLevel }
               : {}),
             temperature: profile.temperature,
-            max_tokens: profile.maxTokens,
+            max_tokens: maxTokens,
           }),
         });
       } catch (error) {
