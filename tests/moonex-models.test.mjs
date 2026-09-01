@@ -4,6 +4,7 @@ import {
   AUTO_MODEL_ID,
   classifyMoonexTask,
   normalizeMoonexModelId,
+  rankProviderModels,
   resolveMoonexProfile,
 } from '../lib/moonex-models.js';
 
@@ -31,4 +32,14 @@ test('Auto routes image attachments to Moonex Vision', () => {
 
 test('Auto routes current-information requests to Moonex Research', () => {
   assert.equal(resolveMoonexProfile(AUTO_MODEL_ID, { messages: [{ role: 'user', content: 'Research the latest information about renewable energy' }] }).id, 'moonex-research-1.5');
+});
+
+test('Provider ranking prefers semantic model matches over array position', () => {
+  const profile = resolveMoonexProfile('moonex-code-1.5');
+  const ranked = rankProviderModels(profile, [
+    { id: 'unrelated-model' },
+    { id: 'qwen-coder' },
+    { id: 'another-model' },
+  ]);
+  assert.equal(ranked[0].id, 'qwen-coder');
 });
