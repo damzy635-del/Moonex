@@ -1,9 +1,10 @@
 import { Conversation, Project, UserPreferences, Artifact } from '../types';
+import { DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
 
 const CONVERSATIONS_KEY = 'moonex_conversations_v1';
 const PROJECTS_KEY = 'moonex_projects_v1';
 const PREFERENCES_KEY = 'moonex_preferences_v1';
-const DEFAULT_MODEL = 'moonex-lite-1.5';
+const DEFAULT_MODEL = DEFAULT_MOONEX_MODEL_ID;
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   userName: 'User', theme: 'dark', defaultModel: DEFAULT_MODEL, defaultThinkingLevel: 'none', defaultWebSearch: false,
@@ -21,12 +22,49 @@ export const INITIAL_CONVERSATION: Conversation = {
 };
 
 export function getSavedConversations(): Conversation[] {
-  try { const raw = localStorage.getItem(CONVERSATIONS_KEY); if (!raw) { saveConversations([INITIAL_CONVERSATION]); return [INITIAL_CONVERSATION]; } const parsed = JSON.parse(raw); return Array.isArray(parsed) && parsed.length ? parsed.map((c: Conversation) => ({ ...c, model: c.model?.startsWith('moonex-') ? c.model : DEFAULT_MODEL })) : [INITIAL_CONVERSATION]; } catch { return [INITIAL_CONVERSATION]; }
+  try {
+    const raw = localStorage.getItem(CONVERSATIONS_KEY);
+    if (!raw) {
+      saveConversations([INITIAL_CONVERSATION]);
+      return [INITIAL_CONVERSATION];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return [INITIAL_CONVERSATION];
+    return parsed.map((conversation: Conversation) => {
+      const model = normalizeMoonexModelId(conversation.model, DEFAULT_MODEL);
+      return {
+        ...conversation,
+        model,
+        messages: Array.isArray(conversation.messages)
+          ? conversation.messages.map((message) =>
+              message.role === 'assistant'
+                ? { ...message, modelUsed: normalizeMoonexModelId(message.modelUsed, model) }
+                : message
+            )
+          : [],
+      };
+    });
+  } catch {
+    return [INITIAL_CONVERSATION];
+  }
 }
 export function saveConversations(conversations: Conversation[]): void { try { localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations)); } catch (e) { console.error('Error saving conversations:', e); } }
 export function getSavedProjects(): Project[] { try { const raw = localStorage.getItem(PROJECTS_KEY); if (!raw) { saveProjects([INITIAL_PROJECT]); return [INITIAL_PROJECT]; } const parsed = JSON.parse(raw); return Array.isArray(parsed) && parsed.length ? parsed : [INITIAL_PROJECT]; } catch { return [INITIAL_PROJECT]; } }
 export function saveProjects(projects: Project[]): void { try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch (e) { console.error('Error saving projects:', e); } }
-export function getSavedPreferences(): UserPreferences { try { const raw = localStorage.getItem(PREFERENCES_KEY); if (!raw) return DEFAULT_PREFERENCES; const saved = JSON.parse(raw); return { ...DEFAULT_PREFERENCES, ...saved, defaultModel: typeof saved.defaultModel === 'string' && saved.defaultModel.startsWith('moonex-') ? saved.defaultModel : DEFAULT_MODEL }; } catch { return DEFAULT_PREFERENCES; } }
+export function getSavedPreferences(): UserPreferences {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_KEY);
+    if (!raw) return DEFAULT_PREFERENCES;
+    const saved = JSON.parse(raw);
+    return {
+      ...DEFAULT_PREFERENCES,
+      ...saved,
+      defaultModel: normalizeMoonexModelId(saved.defaultModel, DEFAULT_MODEL),
+    };
+  } catch {
+    return DEFAULT_PREFERENCES;
+  }
+}
 export function savePreferences(preferences: UserPreferences): void { try { localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); } catch (e) { console.error('Error saving preferences:', e); } }
 export function exportAllData(): string { return JSON.stringify({ conversations: getSavedConversations(), projects: getSavedProjects(), preferences: getSavedPreferences(), exportedAt: new Date().toISOString(), version: '2.0' }, null, 2); }
 export function importAllData(jsonString: string): boolean { try { const data = JSON.parse(jsonString); if (Array.isArray(data.conversations)) saveConversations(data.conversations); if (Array.isArray(data.projects)) saveProjects(data.projects); if (data.preferences) savePreferences(data.preferences); return true; } catch (e) { console.error('Import failed:', e); return false; } }

@@ -10,25 +10,23 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Conversation, Project, UserPreferences } from '../types';
+import { DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
 import {
   getSavedConversations,
   saveConversations,
   getSavedProjects,
   saveProjects,
-  getSavedPreferences,
-  INITIAL_CONVERSATION,
+    getSavedPreferences,
+    savePreferences,
+    INITIAL_CONVERSATION,
   INITIAL_PROJECT,
   DEFAULT_PREFERENCES,
 } from './storage';
 
-const MOONEX_DEFAULT_MODEL = 'moonex-lite-1.5';
-const isMoonexModel = (value: unknown): value is string =>
-  typeof value === 'string' && value.startsWith('moonex-');
+const MOONEX_DEFAULT_MODEL = DEFAULT_MOONEX_MODEL_ID;
 
 function normalizeConversation(conversation: Conversation): Conversation {
-  const model = isMoonexModel(conversation.model)
-    ? conversation.model
-    : MOONEX_DEFAULT_MODEL;
+  const model = normalizeMoonexModelId(conversation.model, MOONEX_DEFAULT_MODEL);
 
   return {
     ...conversation,
@@ -38,8 +36,8 @@ function normalizeConversation(conversation: Conversation): Conversation {
           ...message,
           // Legacy/provider IDs must never become the active UI model identity.
           modelUsed:
-            message.role === 'assistant' && message.modelUsed && !isMoonexModel(message.modelUsed)
-              ? model
+            message.role === 'assistant'
+              ? normalizeMoonexModelId(message.modelUsed, model)
               : message.modelUsed,
         }))
       : [],
