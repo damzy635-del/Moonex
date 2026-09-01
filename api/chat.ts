@@ -9,12 +9,13 @@ export const config = { maxDuration: 300 };
 type Msg = {
   role?: string;
   content?: unknown;
-  files?: Array<{ data?: string; mimeType?: string; type?: string }>;
+  files?: Array<{ data?: string; mimeType?: string; type?: string; name?: string }>;
 };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_MESSAGES = 100;
 const MAX_MESSAGE_CHARS = 100_000;
+const MAX_ATTACHMENT_TEXT_CHARS = 100_000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 20;
 const MAX_PROVIDER_ATTEMPTS = 3;
@@ -47,6 +48,41 @@ function rateLimit(req: any) {
   };
 }
 
+function isImageFile(file: { mimeType?: string; type?: string }) {
+  return String(file.mimeType || '').toLowerCase().startsWith('image/') || file.type === 'image';
+}
+
+function isTextFile(file: { mimeType?: string; type?: string; name?: string }) {
+  const mime = String(file.mimeType || '').toLowerCase();
+  const name = String(file.name || '').toLowerCase();
+  return file.type === 'code' ||
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    mime === 'application/javascript' ||
+    mime === 'application/typescript' ||
+    mime === 'application/xml' ||
+    mime === 'application/sql' ||
+    /\.(txt|md|markdown|csv|json|js|jsx|ts|tsx|py|html|htm|css|scss|sass|sql|sh|bash|xml|yaml|yml|toml|ini|env|java|c|cc|cpp|h|hpp|go|rs|rb|php|swift|kt|kts|vue|svelte)$/i.test(name);
+}
+
+function decodeAttachmentText(data: string): string {
+  if (data.startsWith('data:')) {
+    const comma = data.indexOf(',');
+    if (comma === -1) return '';
+    const metadata = data.slice(5, comma).toLowerCase();
+    const payload = data.slice(comma + 1);
+    if (metadata.includes(';base64')) {
+      return Buffer.from(payload, 'base64').toString('utf8');
+    }
+    try {
+      return decodeURIComponent(payload);
+    } catch {
+      return payload;
+    }
+  }
+  return data;
+}
+
 function convertMessage(message: Msg) {
   const role =
     message.role === 'assistant' || message.role === 'model'
@@ -63,16 +99,42 @@ function convertMessage(message: Msg) {
 
   const parts: any[] = [];
   if (text.trim()) parts.push({ type: 'text', text });
+
   for (const file of files) {
     if (!file?.data || !file?.mimeType) continue;
-    if (!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.mimeType)) continue;
-    if (file.data.length > 1_500_000) throw new Error('An attached image is too large.');
-    const url = file.data.startsWith('data:')
-      ? file.data
-      : `data:${file.mimeType};base64,${file.data}`;
-    parts.push({ type: 'image_url', image_url: { url } });
+
+    if (isImageFile(file)) {
+      if (file.data.length > 1_500_000) throw new Error('An attached image is too large.');
+      const url = file.data.startsWith('data:')
+        ? file.data
+        : `data:${file.mimeType};base64,${file.data}`;
+      parts.push({ type: 'image_url', image_url: { url } });
+      continue;
+    }
+
+    // Text/code attachments arrive from the browser as UTF-8 bytes inside a
+    // data URL. Decode those bytes explicitly as UTF-8 and pass the resulting
+    // Unicode string to My AI. This prevents mojibake such as âââ.
+    if (isTextFile(file)) {
+      const attachmentText = decodeAttachmentText(file.data).slice(0, MAX_ATTACHMENT_TEXT_CHARS);
+      if (attachmentText) {
+        const filename = String(file.name || 'attachment').slice(0, 200);
+        parts.push({
+          type: 'text',
+          text: `\n\n=== ATTACHED FILE: ${filename} ===\n${attachmentText}\n=== END ATTACHED FILE ===`,
+        });
+      }
+      continue;
+    }
+
+    // Keep unsupported binary documents visible to the model instead of
+    // silently dropping them. Actual binary/PDF extraction is not supported
+    // by the OpenAI-style My AI message schema, so do not send base64 as text.
+    const filename = String(file.name || 'attachment').slice(0, 200);
+    parts.push({ type: 'text', text: `\n\n[Attached document: ${filename}. Binary document extraction is not available in this chat path.]` });
   }
-  return { role, content: parts.length ? parts : [{ type: 'text', text: ' ' }] };
+
+  return { role, content: parts.length ? parts : [{ type: 'text', text: text.trim() || ' ' }] };
 }
 
 function buildPrompt(instruction: unknown, knowledge: unknown, tone: string, modelName: string) {
@@ -269,8 +331,8 @@ export default async function handler(req: any, res: any) {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
+            'Content-Type': 'application/json; charset=utf-8',
+            Accept: 'text/event-stream; charset=utf-8',
           },
           body: JSON.stringify({
             model: provider.id,
@@ -313,12 +375,11 @@ export default async function handler(req: any, res: any) {
       }
 
       const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder('utf-8', { fatal: false });
       let buffer = '';
       let emittedText = false;
       let providerFailedBeforeContent = false;
       let providerStreamError = false;
-      let streamDone = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -331,10 +392,7 @@ export default async function handler(req: any, res: any) {
           if (!line.startsWith('data:')) continue;
           const payload = line.slice(5).trim();
           if (!payload) continue;
-          if (payload === '[DONE]') {
-            streamDone = true;
-            continue;
-          }
+          if (payload === '[DONE]') continue;
 
           try {
             const chunk: any = JSON.parse(payload);
@@ -349,7 +407,7 @@ export default async function handler(req: any, res: any) {
               break;
             }
             const text = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.text ?? '';
-            if (text) {
+            if (typeof text === 'string' && text) {
               emittedText = true;
               send(res, { type: 'chunk', text });
             }
@@ -360,6 +418,8 @@ export default async function handler(req: any, res: any) {
 
         if (providerFailedBeforeContent || providerStreamError) break;
       }
+
+      buffer += decoder.decode();
 
       if (providerFailedBeforeContent) continue;
 
@@ -374,7 +434,7 @@ export default async function handler(req: any, res: any) {
               providerStreamError = true;
             } else {
               const text = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.text ?? '';
-              if (text) {
+              if (typeof text === 'string' && text) {
                 emittedText = true;
                 send(res, { type: 'chunk', text });
               }
