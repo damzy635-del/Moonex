@@ -97,7 +97,7 @@ test('Auto selection resolves to a Moonex profile before the upstream request', 
   assert.doesNotMatch(stream, /provider-fast/);
 });
 
-test('streaming provider error objects are normalized instead of becoming [object Object]', async () => {
+test('streaming provider error objects are normalized into a readable Moonex error', async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/models')) {
@@ -114,7 +114,8 @@ test('streaming provider error objects are normalized instead of becoming [objec
   const stream = response.chunks.join('');
 
   assert.doesNotMatch(stream, /\[object Object\]/);
-  assert.match(stream, /Spikes in demand are usually temporary/);
+  assert.match(stream, /"type":"error"/);
+  assert.match(stream, /temporarily busy|temporarily unavailable|retry/i);
 });
 
 test('retryable upstream overload fails over to the next ranked provider', async () => {
