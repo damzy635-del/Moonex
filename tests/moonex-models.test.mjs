@@ -37,9 +37,27 @@ test('Auto routes current-information requests to Moonex Research', () => {
 test('Provider ranking prefers semantic model matches over array position', () => {
   const profile = resolveMoonexProfile('moonex-code-1.5');
   const ranked = rankProviderModels(profile, [
-    { id: 'unrelated-model' },
-    { id: 'qwen-coder' },
-    { id: 'another-model' },
+    { id: 'unrelated-model', capabilities: { tools: true } },
+    { id: 'codestral-latest', capabilities: { tools: true } },
+    { id: 'another-model', capabilities: { tools: true } },
   ]);
-  assert.equal(ranked[0].id, 'qwen-coder');
+  assert.equal(ranked[0].id, 'codestral-latest');
+});
+
+test('Research routing excludes models without search capability', () => {
+  const profile = resolveMoonexProfile('moonex-research-1.5');
+  const ranked = rankProviderModels(profile, [
+    { id: 'gpt-5.6-sol', capabilities: { vision: true, reasoning: true, search: false } },
+    { id: 'gemini-3.7-flash', capabilities: { vision: true, reasoning: true, search: true } },
+  ]);
+  assert.deepEqual(ranked.map((model) => model.id), ['gemini-3.7-flash']);
+});
+
+test('Vision routing excludes text-only models', () => {
+  const profile = resolveMoonexProfile('moonex-vision-1.5');
+  const ranked = rankProviderModels(profile, [
+    { id: 'openai/gpt-oss-120b', capabilities: { reasoning: true, vision: false } },
+    { id: 'gpt-5.6-sol', capabilities: { reasoning: true, vision: true } },
+  ]);
+  assert.deepEqual(ranked.map((model) => model.id), ['gpt-5.6-sol']);
 });

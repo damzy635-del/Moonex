@@ -34,12 +34,14 @@ function request(model: string, prompt: string) {
   };
 }
 
+const allCapabilities = { vision: true, reasoning: true, search: true, tools: true };
+
 async function runChat(model: string, prompt: string) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-fast' }]));
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-fast', capabilities: allCapabilities }]));
     return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
   }) as typeof fetch;
   const response = makeResponse();
@@ -73,7 +75,7 @@ test('Auto selection resolves to a Moonex profile before the upstream request', 
 test('streaming provider error objects are normalized into a readable Moonex error', async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-code' }]));
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-code', capabilities: allCapabilities }]));
     return new Response('data: {"error":{"detail":"Spikes in demand are usually temporary. Please retry shortly."}}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
   }) as typeof fetch;
   const response = makeResponse();
@@ -90,7 +92,11 @@ test('retryable upstream overload fails over to the next ranked provider', async
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'unrelated-model' }, { id: 'qwen-coder' }, { id: 'backup-coder' }]));
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([
+      { id: 'unrelated-model', capabilities: { vision: true, reasoning: true, search: false, tools: false } },
+      { id: 'codestral-latest', capabilities: allCapabilities },
+      { id: 'backup-coder', capabilities: allCapabilities },
+    ]));
     chatAttempt += 1;
     return new Response(chatAttempt === 1 ? JSON.stringify({ error: { message: 'Spikes in demand are usually temporary.' } }) : 'data: {"choices":[{"delta":{"content":"fallback ok"}}]}\n\ndata: [DONE]\n\n', { status: chatAttempt === 1 ? 503 : 200, headers: { 'Content-Type': chatAttempt === 1 ? 'application/json' : 'text/event-stream' } });
   }) as typeof fetch;
@@ -100,7 +106,7 @@ test('retryable upstream overload fails over to the next ranked provider', async
   const firstBody = JSON.parse(String(calls[1].init?.body));
   const secondBody = JSON.parse(String(calls[2].init?.body));
   assert.equal(chatAttempt, 2);
-  assert.equal(firstBody.model, 'qwen-coder');
+  assert.equal(firstBody.model, 'codestral-latest');
   assert.equal(secondBody.model, 'backup-coder');
   assert.equal(firstBody.max_tokens, 4096);
   assert.equal(secondBody.max_tokens, 4096);

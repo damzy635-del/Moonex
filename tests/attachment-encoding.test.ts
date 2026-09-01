@@ -36,7 +36,7 @@ test('UTF-8 code attachment is decoded and forwarded as text', async () => {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-code' }]));
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'provider-code', capabilities: { tools: true, vision: true, reasoning: true, search: true } }]));
     return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
