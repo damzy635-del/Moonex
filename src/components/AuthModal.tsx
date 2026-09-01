@@ -180,7 +180,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
-              {mode === 'signin' && 'Sign in to My AI Model'}
+              {mode === 'signin' && 'Sign in to Moonex'}
               {mode === 'signup' && 'Create your account'}
               {mode === 'forgot' && 'Reset your password'}
             </h2>

@@ -162,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Sparkles className="h-4 w-4" />
               </div>
               <span className="font-semibold text-sm tracking-tight text-white">
-                My AI Model
+                Moonex
               </span>
             </div>
             <span className="text-[10px] font-mono font-medium text-gray-300 bg-[#262626] px-1.5 py-0.5 rounded border border-gray-700/50">

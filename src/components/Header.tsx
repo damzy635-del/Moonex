@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Conversation, Project, ModelInfo, UserPreferences } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { getMoonexDisplayName, getMoonexModelInfo } from '../utils/modelPresentation';
 
 interface HeaderProps {
   currentConversation: Conversation;
@@ -77,17 +78,9 @@ export const Header: React.FC<HeaderProps> = ({
     ? projects.find((p) => p.id === currentConversation.projectId)
     : null;
 
-  const currentModelInfo =
-    availableModels.find((m) => m.id === currentConversation.model) ||
-    availableModels[0] || {
-      id: 'gemini-3.7-flash',
-      name: 'My AI 3.7 Flash',
-      badge: 'Default',
-    };
+  const currentModelInfo = getMoonexModelInfo(currentConversation.model, availableModels);
 
-  const isThinkingActive =
-    currentConversation.model === 'gemini-3.7-flash-thinking' ||
-    currentConversation.thinkingLevel !== 'none';
+  const isThinkingActive = currentConversation.thinkingLevel !== 'none';
 
   return (
     <header
@@ -116,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
             <span className="truncate max-w-[130px] sm:max-w-[190px]">
-              {currentModelInfo.name.replace('My AI ', '')}
+              {getMoonexDisplayName(currentConversation.model)}
             </span>
             {currentModelInfo.badge && (
               <span className="hidden sm:inline-block rounded-md bg-indigo-950/80 border border-indigo-800 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-300">
@@ -138,7 +131,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="absolute left-0 mt-2 w-72 sm:w-80 rounded-xl border border-gray-800 bg-[#171717] p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100"
               >
                 <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  Select AI Model
+                  Select Moonex Model
                 </div>
                 <div className="space-y-1">
                   {availableModels.map((m) => {
@@ -223,7 +216,9 @@ export const Header: React.FC<HeaderProps> = ({
           title="Deep Thinking reasoning mode"
         >
           <BrainCircuit className="h-3.5 w-3.5" />
-          <span className="hidden md:inline">Thinking</span>
+          <span className="hidden md:inline">
+            {isThinkingActive ? `Thinking · ${getMoonexDisplayName(currentConversation.model)}` : 'Thinking'}
+          </span>
         </button>
 
         {/* Web Search Toggle Pill */}

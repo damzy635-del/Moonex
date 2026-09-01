@@ -41,7 +41,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onToggleThinking,
   enableWebSearch,
   onToggleWebSearch,
-  selectedModelName: _selectedModelName,
+  selectedModelName,
   isAuthenticated = true,
   onRequireAuth,
   onOpenPromptLibrary,
@@ -370,6 +370,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         <div className="flex items-center justify-between gap-2 px-2.5 sm:px-3 pb-2 pt-1 border-t border-gray-800/40">
           {/* Left: Quick Mode Buttons & Attachments */}
           <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
+            <div
+              className="hidden sm:flex max-w-[150px] shrink-0 items-center gap-1.5 rounded-lg border border-indigo-900/50 bg-indigo-950/30 px-2 py-1 text-[11px] font-medium text-indigo-300"
+              title={`Selected model: ${selectedModelName}`}
+            >
+              <Sparkles className="h-3 w-3 shrink-0 text-indigo-400" />
+              <span className="truncate">{selectedModelName}</span>
+            </div>
+
             {/* Attach File Button */}
             <input
               type="file"
@@ -560,7 +568,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </div>
 
       <div className="mt-1.5 text-center text-[11px] text-gray-500">
-        My AI Model can make mistakes. Verify important facts, code, and medical info.
+        Moonex can make mistakes. Verify important facts, code, and medical info.
       </div>
     </div>
   );

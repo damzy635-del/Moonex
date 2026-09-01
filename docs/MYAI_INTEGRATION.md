@@ -19,49 +19,19 @@ audio-synthesis capability, so text-to-speech stays on direct Gemini.
 
 ## Required setup on the My AI deployment
 
-This app's model picker offers several distinct Gemini model IDs
-(`gemini-3.7-flash`, `gemini-2.5-flash`, `gemini-2.5-pro`,
-`gemini-3.1-flash-lite`). My AI's provider registry only recognizes a
-model ID if it's the provider's own configured default (`GOOGLE_MODEL` env
-var) or explicitly registered via `AI_MODEL_ROUTES`. **Without this, every
-model selection except the deployment's single default will fail with "no
-provider is configured to serve this model" was 400 error.**
+The model picker is Moonex-native. It exposes the manual profiles `Moonex Lite 1.5`, `Moonex Fast 1.5`, `Moonex Pro 1.5`, `Moonex Pro Max 1.5`, `Moonex Ultra 1.5`, `Moonex Reasoning 1.5`, `Moonex Code 1.5`, `Moonex Vision 1.5`, and `Moonex Research 1.5`, plus `Auto`.
 
-Set this on the My AI deployment:
+The browser stores and sends only Moonex profile IDs. The backend resolves a manual profile, or classifies an `Auto` request into a Moonex profile, before translating it to the provider model required by the unified API. Provider IDs are never returned in SSE metadata or rendered by the client.
 
-```
-AI_MODEL_ROUTES=gemini-3.7-flash:google,gemini-2.5-flash:google,gemini-2.5-pro:google,gemini-3.1-flash-lite:google
-```
+The configured My AI deployment must expose at least one usable upstream model through `/models`. Provider selection remains a server-side implementation detail; no provider-specific route table is required in the browser.
 
-(`gemini-3.7-flash-thinking` isn't a real model ID — it's this app's own
-shorthand for "gemini-3.7-flash with thinking forced on," resolved in
-`server.ts` before the request ever reaches My AI, so it doesn't need a
-route entry.)
+## What changed in the chat and model-state path
 
-## What changed in `server.ts`
-
-- `toMyAIMessage()` — translates this app's `{role, content, files}`
-  message shape into My AI's canonical format: a plain string for
-  text-only messages, or a list of `{type:"text"}` / `{type:"image_url"}`
-  parts when files are attached (the same shape OpenAI's API uses, which
-  My AI standardized on).
-- `resolveMyAIModelAndThinking()` — the same model/thinking-level split
-  logic this app already used against Gemini directly, now producing the
-  `model` and `thinking_level` fields My AI's API expects.
-- `/api/chat` now does a single fetch to `${MYAI_API_URL}/chat/completions`
-  with `stream: true`, and translates My AI's OpenAI-compatible SSE chunks
-  (`choices[0].delta.content`, plus routing metadata in `x_unified_api`)
-  back into this app's own SSE event shape (`{type:"chunk"}` /
-  `{type:"done"}` / `{type:"error"}`) — so **the React frontend needed zero
-  changes**.
-- The manual per-model retry/fallback loop (`getFallbackModels`,
-  `isTransientError`, the nested retry loop) is no longer used by
-  `/api/chat` — My AI already does this server-side (Phases 5-6: intra-
-  provider retries, cross-provider fallback, circuit breaker), and can
-  fall back across entirely different providers (OpenAI, Groq, Mistral),
-  not just other Gemini model variants. Those helper functions are left
-  in place since `/api/research` and `/api/code/run` haven't been migrated
-  yet (see below).
+- The client treats the selected Moonex profile ID as the single source of truth for the header, composer, conversation state, streaming bubble, assistant metadata, local storage, and cloud sync.
+- `/api/models` returns the Moonex catalog and `Auto`; it does not expose the provider catalog to the browser.
+- `/api/chat` emits a `route` SSE event with the resolved Moonex profile before content chunks. For example, an `Auto` request can transition from `Auto` to `Moonex Code 1.5` while streaming, without showing the provider model.
+- The local Express development server delegates `/api/models` and `/api/chat` to the same handlers used by the deployment API, preventing dev/prod model-state drift.
+- Provider model resolution and the upstream `/chat/completions` request remain server-side. The client receives only Moonex profile IDs and display names.
 
 ## Capabilities added to My AI to support this integration
 

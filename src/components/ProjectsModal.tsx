@@ -119,7 +119,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
 
     const newDocs: ProjectKnowledgeItem[] = [];
 
-    for (const file of Array.from(files)) {
+    for (const file of Array.from(files) as File[]) {
       const textContent = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);

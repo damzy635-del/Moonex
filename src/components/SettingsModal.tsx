@@ -80,7 +80,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `my_ai_model_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `moonex_backup_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -196,7 +196,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <div className="hidden md:block px-2 py-2 text-[10px] text-gray-500 border-t border-gray-800">
-            My AI Model Consumer v3.7
+            Moonex Consumer v3.7
           </div>
         </div>
 
@@ -272,7 +272,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <LogIn className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white">Sign In to My AI Model</h3>
+                      <h3 className="text-sm font-bold text-white">Sign In to Moonex</h3>
                       <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
                         Connect with Google or Email to synchronize your conversations, knowledge bases, and custom preferences securely across devices with Firestore.
                       </p>
@@ -321,7 +321,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 mb-1">
-                    What should My AI Model know about you?
+                    What should Moonex know about you?
                   </label>
                   <textarea
                     value={prefs.userContext}
