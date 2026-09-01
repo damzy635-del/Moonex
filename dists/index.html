@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Moonex</title>
+    <meta name="description" content="Production-grade consumer AI assistant for conversation, multi-modal analysis, reasoning, research, projects, and creative work." />
+    <meta property="og:title" content="Moonex" />
+    <meta property="og:description" content="Production-grade consumer AI assistant for conversation, multi-modal analysis, reasoning, research, projects, and creative work." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" crossorigin src="/assets/index-C2GPYKn2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-tydYemmN.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (() => {
+        const BRAND = 'Moonex';
+        const replaceBrandText = (root) => {
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          const nodes = [];
+          let node;
+          while ((node = walker.nextNode())) nodes.push(node);
+          for (const textNode of nodes) {
+            if (textNode.nodeValue && textNode.nodeValue.includes('My AI Model')) {
+              textNode.nodeValue = textNode.nodeValue.replace(/My AI Model/g, BRAND);
+            }
+          }
+          root.querySelectorAll('[title],[aria-label]').forEach((el) => {
+            for (const attr of ['title', 'aria-label']) {
+              const value = el.getAttribute(attr);
+              if (value && value.includes('My AI Model')) {
+                el.setAttribute(attr, value.replace(/My AI Model/g, BRAND));
+              }
+            }
+          });
+        };
+
+        const start = () => {
+          replaceBrandText(document.body);
+          new MutationObserver(() => replaceBrandText(document.body)).observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['title', 'aria-label'],
+          });
+        };
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+          start();
+        }
+      })();
+    </script>
+  </body>
+</html>
