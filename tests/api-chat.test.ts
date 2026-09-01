@@ -5,10 +5,7 @@ import handler from '../api/chat';
 const originalFetch = globalThis.fetch;
 
 function responseFor(body: string, status = 200, contentType = 'application/json') {
-  return new Response(body, {
-    status,
-    headers: { 'Content-Type': contentType },
-  });
+  return new Response(body, { status, headers: { 'Content-Type': contentType } });
 }
 
 function makeResponse() {
@@ -66,7 +63,7 @@ test('manual Moonex selection reaches the API with the selected Moonex profile',
 test('Auto selection resolves to a Moonex profile before the upstream request', async () => {
   const { upstreamBody, stream } = await runChat('auto', 'Write a React authentication system');
   assert.equal(upstreamBody.model, 'provider-fast');
-  assert.equal(upstreamBody.max_tokens, 2048);
+  assert.equal(upstreamBody.max_tokens, 4096);
   assert.match(upstreamBody.messages[0].content, /Moonex Code 1\.5/);
   assert.match(stream, /"moonexModel":"moonex-code-1\.5"/);
   assert.match(stream, /"modelUsed":"moonex-code-1\.5"/);
