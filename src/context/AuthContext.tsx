@@ -1,4 +1,15 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
+
 import {
   User,
   signInWithPopup,
@@ -9,8 +20,18 @@ import {
   updateProfile,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, googleProvider, appleProvider, db } from '../lib/firebase';
+
+import {
+  doc,
+  setDoc,
+} from 'firebase/firestore';
+
+import {
+  auth,
+  googleProvider,
+  appleProvider,
+  db,
+} from '../lib/firebase';
 
 export interface AppUser {
   uid: string;
@@ -21,381 +42,359 @@ export interface AppUser {
 }
 
 interface AuthContextType {
-  user: User | AppUser | null;
+  user: User | null;
   loading: boolean;
   isAnonymous: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
-  signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
+  signUpWithEmail: (
+    email: string,
+    pass: string,
+    name: string
+  ) => Promise<void>;
   signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateDisplayName: (name: string) => Promise<void>;
 }
 
-const CUSTOM_SESSION_KEY = 'myaimodel_custom_auth_session';
+const AuthContext = createContext<AuthContextType | undefined>(
+  undefined
+);
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+/**
+ * Create/update the user's Firestore profile.
+ *
+ * IMPORTANT:
+ * This function is only called with a real Firebase Auth user.
+ * Therefore Firestore request.auth.uid will match user.uid.
+ */
+async function syncUserProfile(firebaseUser: User): Promise<void> {
+  const userDocRef = doc(db, 'users', firebaseUser.uid);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | AppUser | null>(() => {
-    try {
-      const saved = localStorage.getItem(CUSTOM_SESSION_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // Ignore JSON parse errors
-    }
-    return null;
-  });
+  const userSnap = await import('firebase/firestore').then(
+    ({ getDoc }) => getDoc(userDocRef)
+  );
+
+  if (!userSnap.exists()) {
+    await setDoc(userDocRef, {
+      id: firebaseUser.uid,
+      email: firebaseUser.email || '',
+      displayName:
+        firebaseUser.displayName ||
+        (firebaseUser.isAnonymous ? 'Guest User' : 'User'),
+      photoURL: firebaseUser.photoURL || '',
+      isAnonymous: firebaseUser.isAnonymous,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastLoginAt: Date.now(),
+    });
+  } else {
+    await setDoc(
+      userDocRef,
+      {
+        email: firebaseUser.email || '',
+        displayName:
+          firebaseUser.displayName ||
+          (firebaseUser.isAnonymous ? 'Guest User' : 'User'),
+        photoURL: firebaseUser.photoURL || '',
+        isAnonymous: firebaseUser.isAnonymous,
+        updatedAt: Date.now(),
+        lastLoginAt: Date.now(),
+      },
+      { merge: true }
+    );
+  }
+}
+
+export const AuthProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Firebase Auth is the ONLY source of truth for authentication.
+   *
+   * We intentionally do NOT restore a fake user from localStorage.
+   * Firestore Security Rules depend on request.auth, which only exists
+   * for a real Firebase Authentication session.
+   */
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        localStorage.removeItem(CUSTOM_SESSION_KEY);
-        // Upsert user profile document in Firestore
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
         try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const userSnap = await getDoc(userDocRef);
-          if (!userSnap.exists()) {
-            await setDoc(userDocRef, {
-              id: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: currentUser.displayName || (currentUser.isAnonymous ? 'Guest User' : 'User'),
-              photoURL: currentUser.photoURL || '',
-              isAnonymous: currentUser.isAnonymous,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            });
-          } else {
-            await setDoc(
-              userDocRef,
-              {
-                lastLoginAt: Date.now(),
-                updatedAt: Date.now(),
-              },
-              { merge: true }
-            );
-          }
-        } catch (e) {
-          console.warn('Could not sync user profile to Firestore:', e);
-        }
-      } else {
-        // If not in Firebase Auth, check local custom session
-        try {
-          const saved = localStorage.getItem(CUSTOM_SESSION_KEY);
-          if (saved) {
-            setUser(JSON.parse(saved));
+          if (currentUser) {
+            setUser(currentUser);
+
+            // Keep the user's Firestore profile synchronized.
+            try {
+              await syncUserProfile(currentUser);
+            } catch (firestoreError) {
+              console.warn(
+                'Could not sync user profile to Firestore:',
+                firestoreError
+              );
+            }
           } else {
             setUser(null);
           }
-        } catch {
-          setUser(null);
+        } finally {
+          setLoading(false);
         }
       }
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
+  /**
+   * Google Sign-In
+   */
+  const signInWithGoogle = async (): Promise<void> => {
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(
+        auth,
+        googleProvider
+      );
+
       if (result.user) {
-        localStorage.removeItem(CUSTOM_SESSION_KEY);
         setUser(result.user);
+
         try {
-          const userDocRef = doc(db, 'users', result.user.uid);
-          await setDoc(
-            userDocRef,
-            {
-              id: result.user.uid,
-              email: result.user.email || '',
-              displayName: result.user.displayName || 'Google User',
-              photoURL: result.user.photoURL || '',
-              isAnonymous: false,
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            },
-            { merge: true }
+          await syncUserProfile(result.user);
+        } catch (firestoreError) {
+          console.warn(
+            'Firestore Google profile sync error:',
+            firestoreError
           );
-        } catch (fErr) {
-          console.warn('Firestore user profile sync error:', fErr);
         }
       }
     } catch (error: any) {
       if (
         error?.code === 'auth/popup-closed-by-user' ||
-        error?.code === 'auth/cancelled-popup-request' ||
-        error?.message?.includes('popup-closed-by-user')
+        error?.code === 'auth/cancelled-popup-request'
       ) {
-        // User closed the popup window - graceful cancellation
         return;
       }
-      console.warn('Google Sign-in status:', error?.message || error);
+
+      console.warn(
+        'Google Sign-in error:',
+        error?.message || error
+      );
+
       throw error;
     }
   };
 
-  const signInWithApple = async () => {
+  /**
+   * Apple Sign-In
+   *
+   * No fake/local Apple account is created if Apple authentication
+   * is not configured. Firebase must authenticate the user.
+   */
+  const signInWithApple = async (): Promise<void> => {
     try {
-      const result = await signInWithPopup(auth, appleProvider);
+      const result = await signInWithPopup(
+        auth,
+        appleProvider
+      );
+
       if (result.user) {
-        localStorage.removeItem(CUSTOM_SESSION_KEY);
         setUser(result.user);
+
         try {
-          const userDocRef = doc(db, 'users', result.user.uid);
-          await setDoc(
-            userDocRef,
-            {
-              id: result.user.uid,
-              email: result.user.email || '',
-              displayName:
-                result.user.displayName ||
-                (result.user.email ? result.user.email.split('@')[0] : 'Apple User'),
-              photoURL: result.user.photoURL || '',
-              isAnonymous: false,
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            },
-            { merge: true }
+          await syncUserProfile(result.user);
+        } catch (firestoreError) {
+          console.warn(
+            'Firestore Apple profile sync error:',
+            firestoreError
           );
-        } catch (fErr) {
-          console.warn('Firestore user profile sync error:', fErr);
         }
       }
     } catch (error: any) {
       if (
         error?.code === 'auth/popup-closed-by-user' ||
-        error?.code === 'auth/cancelled-popup-request' ||
-        error?.message?.includes('popup-closed-by-user')
+        error?.code === 'auth/cancelled-popup-request'
       ) {
-        // User closed the popup window - graceful cancellation
         return;
       }
 
-      // If Apple provider is unconfigured in Firebase project console, fall back to seamless Apple session
-      if (
-        error?.code === 'auth/operation-not-allowed' ||
-        error?.code === 'auth/admin-restricted-operation' ||
-        error?.message?.includes('operation-not-allowed')
-      ) {
-        const appleSessionUser: AppUser = {
-          uid: 'apple_' + Math.random().toString(36).substring(2, 10),
-          email: 'user@icloud.com',
-          displayName: 'Apple User',
-          photoURL: '',
-          isAnonymous: false,
-        };
-        localStorage.setItem(CUSTOM_SESSION_KEY, JSON.stringify(appleSessionUser));
-        setUser(appleSessionUser);
-        try {
-          const userDocRef = doc(db, 'users', appleSessionUser.uid);
-          await setDoc(
-            userDocRef,
-            {
-              id: appleSessionUser.uid,
-              email: appleSessionUser.email,
-              displayName: appleSessionUser.displayName,
-              photoURL: '',
-              isAnonymous: false,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            },
-            { merge: true }
-          );
-        } catch (fErr) {
-          console.warn('Firestore profile sync note:', fErr);
-        }
-        return;
-      }
+      console.warn(
+        'Apple Sign-in error:',
+        error?.message || error
+      );
 
-      console.warn('Apple Sign-in status:', error?.message || error);
       throw error;
     }
   };
 
-  const signInWithEmail = async (email: string, pass: string) => {
+  /**
+   * Email / Password Sign-In
+   *
+   * No fake user is created when Email/Password is disabled.
+   * Firebase must provide a real authenticated user.
+   */
+  const signInWithEmail = async (
+    email: string,
+    pass: string
+  ): Promise<void> => {
+    const result = await signInWithEmailAndPassword(
+      auth,
+      email,
+      pass
+    );
+
+    if (result.user) {
+      setUser(result.user);
+
+      try {
+        await syncUserProfile(result.user);
+      } catch (firestoreError) {
+        console.warn(
+          'Firestore email profile sync error:',
+          firestoreError
+        );
+      }
+    }
+  };
+
+  /**
+   * Email / Password Sign-Up
+   */
+  const signUpWithEmail = async (
+    email: string,
+    pass: string,
+    name: string
+  ): Promise<void> => {
+    const result = await createUserWithEmailAndPassword(
+      auth,
+      email,
+      pass
+    );
+
+    if (!result.user) {
+      throw new Error(
+        'Firebase account creation did not return a user.'
+      );
+    }
+
     try {
-      const res = await signInWithEmailAndPassword(auth, email, pass);
-      if (res.user) {
-        localStorage.removeItem(CUSTOM_SESSION_KEY);
-        setUser(res.user);
-      }
-    } catch (error: any) {
-      // If Email provider is not enabled in Firebase Console, authenticate with resilient user account
-      if (
-        error?.code === 'auth/operation-not-allowed' ||
-        error?.code === 'auth/admin-restricted-operation' ||
-        error?.message?.includes('operation-not-allowed')
-      ) {
-        const uidHash = 'usr_' + Math.abs(
-          email.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)
-        ).toString(36);
-
-        const emailSessionUser: AppUser = {
-          uid: uidHash,
-          email: email,
-          displayName: email.split('@')[0] || 'User',
-          photoURL: '',
-          isAnonymous: false,
-        };
-        localStorage.setItem(CUSTOM_SESSION_KEY, JSON.stringify(emailSessionUser));
-        setUser(emailSessionUser);
-        try {
-          const userDocRef = doc(db, 'users', emailSessionUser.uid);
-          await setDoc(
-            userDocRef,
-            {
-              id: emailSessionUser.uid,
-              email: emailSessionUser.email,
-              displayName: emailSessionUser.displayName,
-              photoURL: '',
-              isAnonymous: false,
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            },
-            { merge: true }
-          );
-        } catch (fErr) {
-          console.warn('Firestore profile sync note:', fErr);
-        }
-        return;
-      }
-
-      throw error;
+      await updateProfile(result.user, {
+        displayName: name,
+      });
+    } catch (profileError) {
+      console.warn(
+        'Firebase profile update warning:',
+        profileError
+      );
     }
-  };
 
-  const signUpWithEmail = async (email: string, pass: string, name: string) => {
+    // Refresh the local Firebase User reference after updateProfile.
+    setUser(auth.currentUser || result.user);
+
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, pass);
-      if (result.user) {
-        localStorage.removeItem(CUSTOM_SESSION_KEY);
-        setUser(result.user);
-        try {
-          await updateProfile(result.user, { displayName: name });
-        } catch (pErr) {
-          console.warn('Profile update warning:', pErr);
-        }
-        try {
-          const userDocRef = doc(db, 'users', result.user.uid);
-          await setDoc(userDocRef, {
-            id: result.user.uid,
-            email: result.user.email || email,
-            displayName: name || 'User',
-            photoURL: '',
-            isAnonymous: false,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            lastLoginAt: Date.now(),
-          });
-        } catch (fErr) {
-          console.warn('Firestore profile sync note:', fErr);
-        }
-      }
-    } catch (error: any) {
-      // If Email provider is not enabled in Firebase Console, create resilient user account
-      if (
-        error?.code === 'auth/operation-not-allowed' ||
-        error?.code === 'auth/admin-restricted-operation' ||
-        error?.message?.includes('operation-not-allowed')
-      ) {
-        const uidHash = 'usr_' + Math.abs(
-          email.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)
-        ).toString(36);
-
-        const emailSessionUser: AppUser = {
-          uid: uidHash,
-          email: email,
-          displayName: name || email.split('@')[0] || 'User',
-          photoURL: '',
-          isAnonymous: false,
-        };
-        localStorage.setItem(CUSTOM_SESSION_KEY, JSON.stringify(emailSessionUser));
-        setUser(emailSessionUser);
-        try {
-          const userDocRef = doc(db, 'users', emailSessionUser.uid);
-          await setDoc(
-            userDocRef,
-            {
-              id: emailSessionUser.uid,
-              email: emailSessionUser.email,
-              displayName: emailSessionUser.displayName,
-              photoURL: '',
-              isAnonymous: false,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-              lastLoginAt: Date.now(),
-            },
-            { merge: true }
-          );
-        } catch (fErr) {
-          console.warn('Firestore profile sync note:', fErr);
-        }
-        return;
-      }
-
-      throw error;
+      await syncUserProfile(
+        auth.currentUser || result.user
+      );
+    } catch (firestoreError) {
+      console.warn(
+        'Firestore signup profile sync error:',
+        firestoreError
+      );
     }
   };
 
-  const signInAsGuest = async () => {
-    // Guest sessions are restricted
-    throw new Error('Guest mode is restricted. Please sign in with Google, Apple, or Email.');
+  /**
+   * Guest mode is intentionally disabled.
+   *
+   * If you later want anonymous Firebase authentication,
+   * implement it with Firebase signInAnonymously(auth).
+   */
+  const signInAsGuest = async (): Promise<void> => {
+    throw new Error(
+      'Guest mode is restricted. Please sign in with Google, Apple, or Email.'
+    );
   };
 
-  const logout = async () => {
-    localStorage.removeItem(CUSTOM_SESSION_KEY);
-    setUser(null);
+  /**
+   * Sign out
+   */
+  const logout = async (): Promise<void> => {
     try {
       await signOut(auth);
+      setUser(null);
     } catch (error: any) {
-      console.warn('Sign-out note:', error);
-    }
-  };
-
-  const resetPassword = async (email: string) => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-    } catch (error: any) {
-      if (
-        error?.code === 'auth/operation-not-allowed' ||
-        error?.message?.includes('operation-not-allowed')
-      ) {
-        // Emulate successful password reset request
-        return;
-      }
-      console.warn('Password reset note:', error);
+      console.warn(
+        'Sign-out error:',
+        error?.message || error
+      );
       throw error;
     }
   };
 
-  const updateDisplayName = async (name: string) => {
-    if (auth.currentUser) {
-      try {
-        await updateProfile(auth.currentUser, { displayName: name });
-        setUser({ ...auth.currentUser });
-      } catch (pErr) {
-        console.warn('Profile update warning:', pErr);
-      }
-    } else if (user) {
-      const updated = { ...user, displayName: name };
-      setUser(updated);
-      localStorage.setItem(CUSTOM_SESSION_KEY, JSON.stringify(updated));
+  /**
+   * Password reset
+   */
+  const resetPassword = async (
+    email: string
+  ): Promise<void> => {
+    await sendPasswordResetEmail(auth, email);
+  };
+
+  /**
+   * Update display name
+   */
+  const updateDisplayName = async (
+    name: string
+  ): Promise<void> => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error(
+        'You must be signed in to update your display name.'
+      );
     }
-    if (user) {
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { displayName: name, updatedAt: Date.now() }, { merge: true });
-      } catch (fErr) {
-        console.warn('Firestore display name sync note:', fErr);
-      }
+
+    try {
+      await updateProfile(currentUser, {
+        displayName: name,
+      });
+
+      // Firebase's User object may need to be refreshed in React state.
+      setUser(auth.currentUser);
+    } catch (profileError) {
+      console.warn(
+        'Profile update warning:',
+        profileError
+      );
+      throw profileError;
+    }
+
+    try {
+      const userDocRef = doc(
+        db,
+        'users',
+        currentUser.uid
+      );
+
+      await setDoc(
+        userDocRef,
+        {
+          displayName: name,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    } catch (firestoreError) {
+      console.warn(
+        'Firestore display name sync error:',
+        firestoreError
+      );
+
+      throw firestoreError;
     }
   };
 
@@ -420,11 +419,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error(
+      'useAuth must be used within an AuthProvider'
+    );
   }
+
   return context;
 };
-
