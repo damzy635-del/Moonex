@@ -1,10 +1,11 @@
 import { Conversation, Project, UserPreferences, Artifact } from '../types';
-import { DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
+import { AUTO_MODEL_ID, DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
 
 const CONVERSATIONS_KEY = 'moonex_conversations_v1';
 const PROJECTS_KEY = 'moonex_projects_v1';
 const PREFERENCES_KEY = 'moonex_preferences_v1';
-const DEFAULT_MODEL = DEFAULT_MOONEX_MODEL_ID;
+const DEFAULT_MODEL = AUTO_MODEL_ID;
+const MODEL_FALLBACK = DEFAULT_MOONEX_MODEL_ID;
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   userName: 'User', theme: 'dark', defaultModel: DEFAULT_MODEL, defaultThinkingLevel: 'none', defaultWebSearch: false,
@@ -17,36 +18,21 @@ export const INITIAL_PROJECT: Project = {
 };
 
 export const INITIAL_CONVERSATION: Conversation = {
-  id: 'conv_welcome', title: 'Welcome to Moonex', messages: [{ id: 'msg_welcome_1', role: 'assistant', content: `### Welcome to **Moonex** 🌙\n\nI'm Moonex, your AI assistant for reasoning, coding, research, writing, and multimodal work.\n\nSelect a Moonex model above to change the model used for your next response.`, timestamp: Date.now(), modelUsed: DEFAULT_MODEL }],
+  id: 'conv_welcome', title: 'Welcome to Moonex', messages: [{ id: 'msg_welcome_1', role: 'assistant', content: `### Welcome to **Moonex** 🌙\n\nI'm Moonex, your AI assistant for reasoning, coding, research, writing, and multimodal work.\n\n**Auto** selects the best Moonex model for each request. You can still choose a specific Moonex model whenever you want.`, timestamp: Date.now(), modelUsed: DEFAULT_MODEL }],
   createdAt: Date.now(), updatedAt: Date.now(), model: DEFAULT_MODEL, thinkingLevel: 'none', enableWebSearch: false,
 };
 
 export function getSavedConversations(): Conversation[] {
   try {
     const raw = localStorage.getItem(CONVERSATIONS_KEY);
-    if (!raw) {
-      saveConversations([INITIAL_CONVERSATION]);
-      return [INITIAL_CONVERSATION];
-    }
+    if (!raw) { saveConversations([INITIAL_CONVERSATION]); return [INITIAL_CONVERSATION]; }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || !parsed.length) return [INITIAL_CONVERSATION];
     return parsed.map((conversation: Conversation) => {
-      const model = normalizeMoonexModelId(conversation.model, DEFAULT_MODEL);
-      return {
-        ...conversation,
-        model,
-        messages: Array.isArray(conversation.messages)
-          ? conversation.messages.map((message) =>
-              message.role === 'assistant'
-                ? { ...message, modelUsed: normalizeMoonexModelId(message.modelUsed, model) }
-                : message
-            )
-          : [],
-      };
+      const model = normalizeMoonexModelId(conversation.model, MODEL_FALLBACK);
+      return { ...conversation, model, messages: Array.isArray(conversation.messages) ? conversation.messages.map((message) => message.role === 'assistant' ? { ...message, modelUsed: normalizeMoonexModelId(message.modelUsed, model) } : message) : [] };
     });
-  } catch {
-    return [INITIAL_CONVERSATION];
-  }
+  } catch { return [INITIAL_CONVERSATION]; }
 }
 export function saveConversations(conversations: Conversation[]): void { try { localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations)); } catch (e) { console.error('Error saving conversations:', e); } }
 export function getSavedProjects(): Project[] { try { const raw = localStorage.getItem(PROJECTS_KEY); if (!raw) { saveProjects([INITIAL_PROJECT]); return [INITIAL_PROJECT]; } const parsed = JSON.parse(raw); return Array.isArray(parsed) && parsed.length ? parsed : [INITIAL_PROJECT]; } catch { return [INITIAL_PROJECT]; } }
@@ -56,14 +42,8 @@ export function getSavedPreferences(): UserPreferences {
     const raw = localStorage.getItem(PREFERENCES_KEY);
     if (!raw) return DEFAULT_PREFERENCES;
     const saved = JSON.parse(raw);
-    return {
-      ...DEFAULT_PREFERENCES,
-      ...saved,
-      defaultModel: normalizeMoonexModelId(saved.defaultModel, DEFAULT_MODEL),
-    };
-  } catch {
-    return DEFAULT_PREFERENCES;
-  }
+    return { ...DEFAULT_PREFERENCES, ...saved, defaultModel: normalizeMoonexModelId(saved.defaultModel, DEFAULT_MODEL) };
+  } catch { return DEFAULT_PREFERENCES; }
 }
 export function savePreferences(preferences: UserPreferences): void { try { localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); } catch (e) { console.error('Error saving preferences:', e); } }
 export function exportAllData(): string { return JSON.stringify({ conversations: getSavedConversations(), projects: getSavedProjects(), preferences: getSavedPreferences(), exportedAt: new Date().toISOString(), version: '2.0' }, null, 2); }
