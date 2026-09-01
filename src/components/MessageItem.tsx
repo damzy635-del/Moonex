@@ -32,6 +32,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { Message, FileAttachment, Artifact } from '../types';
+import { getMoonexDisplayName } from '../utils/modelPresentation';
 
 interface MessageItemProps {
   message: Message;
@@ -163,11 +164,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-gray-200">
-                {isUser ? 'You' : 'My AI Model'}
+                {isUser ? 'You' : 'Moonex'}
               </span>
               {!isUser && message.modelUsed && (
                 <span className="rounded bg-[#1f1f1f] px-1.5 py-0.5 text-[10px] font-mono text-gray-400 border border-gray-800">
-                  {message.modelUsed.replace('gemini-', '')}
+                  {getMoonexDisplayName(message.modelUsed)}
                 </span>
               )}
               {message.isPinned && (
