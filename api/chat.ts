@@ -299,6 +299,7 @@ export default async function handler(req: any, res: any) {
       let buffer = '';
       let emittedText = false;
       let providerFailedBeforeContent = false;
+      let providerStreamError = false;
       let streamDone = false;
 
       while (true) {
@@ -322,12 +323,12 @@ export default async function handler(req: any, res: any) {
             if (chunk?.error) {
               lastError = errorText(chunk.error);
               lastStatus = Number(chunk.error?.status || chunk.status || 502);
+              providerStreamError = true;
               if (!emittedText && attempt + 1 < candidates.length && isRetryableError(lastStatus, lastError)) {
                 providerFailedBeforeContent = true;
                 await reader.cancel().catch(() => undefined);
-                break;
               }
-              continue;
+              break;
             }
             const text = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.text ?? '';
             if (text) {
@@ -339,7 +340,7 @@ export default async function handler(req: any, res: any) {
           }
         }
 
-        if (providerFailedBeforeContent) break;
+        if (providerFailedBeforeContent || providerStreamError) break;
       }
 
       if (providerFailedBeforeContent) continue;
@@ -352,6 +353,7 @@ export default async function handler(req: any, res: any) {
             if (chunk?.error) {
               lastError = errorText(chunk.error);
               lastStatus = Number(chunk.error?.status || chunk.status || 502);
+              providerStreamError = true;
             } else {
               const text = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.text ?? '';
               if (text) {
@@ -365,9 +367,11 @@ export default async function handler(req: any, res: any) {
         }
       }
 
-      if (lastError && !emittedText && !streamDone && attempt + 1 < candidates.length && isRetryableError(lastStatus, lastError)) {
+      if (providerStreamError && !emittedText && attempt + 1 < candidates.length && isRetryableError(lastStatus, lastError)) {
         continue;
       }
+
+      if (providerStreamError) break;
 
       send(res, { type: 'done', modelUsed: profile.id });
       completed = true;
