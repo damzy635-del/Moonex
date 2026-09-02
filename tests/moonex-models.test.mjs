@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   AUTO_MODEL_ID,
   classifyMoonexTask,
+  MOONEX_MODELS,
   normalizeMoonexModelId,
   rankProviderModels,
   resolveMoonexProfile,
@@ -12,6 +13,12 @@ test('normalization rejects legacy/provider IDs from public model state', () => 
   assert.equal(normalizeMoonexModelId('gemini-3.7-flash'), 'moonex-lite-1.5');
   assert.equal(normalizeMoonexModelId('moonex-ultra-1.5'), 'moonex-ultra-1.5');
   assert.equal(normalizeMoonexModelId(AUTO_MODEL_ID), AUTO_MODEL_ID);
+});
+
+test('all Moonex preferred model ids are present in the production provider catalog naming', () => {
+  const preferredIds = MOONEX_MODELS.flatMap((profile) => profile.preferredKeywords);
+  assert.ok(preferredIds.includes('gemini-3.1-pro-preview'));
+  assert.ok(!preferredIds.includes('gemini-3.1-pro'));
 });
 
 test('Auto routes arithmetic to Moonex Lite', () => {
