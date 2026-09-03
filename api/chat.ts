@@ -30,10 +30,19 @@ const RATE_LIMIT = 20;
 const MAX_PROVIDER_ATTEMPTS = 5;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_PROVIDER_MAX_TOKENS = 4096;
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 120_000;
+const MODEL_CATALOG_TIMEOUT_MS = 7_500;
+const MAX_CONFIGURED_TIMEOUT_MS = 120_000;
 const rateBuckets = new Map<string, { started: number; count: number }>();
 
 const baseUrl = () => (process.env.MYAI_API_URL || '').replace(/\/$/, '');
 const apiKey = () => process.env.MYAI_API_KEY || '';
+
+function configuredTimeoutMs() {
+  const value = Number(process.env.MOONEX_UPSTREAM_TIMEOUT_MS);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_UPSTREAM_TIMEOUT_MS;
+  return Math.min(Math.floor(value), MAX_CONFIGURED_TIMEOUT_MS);
+}
 
 function clientKey(req: any) {
   const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
@@ -162,22 +171,29 @@ function errorText(value: unknown): string {
   return 'The AI provider returned an unknown error.';
 }
 
-function classifyProviderError(status: number, message: string): { reason: string; retryable: boolean } {
+export function classifyProviderError(status: number, message: string): { reason: string; retryable: boolean } {
+  if (status === 401 || status === 403) return { reason: 'AUTHENTICATION_FAILED', retryable: false };
+  if (status === 429) return { reason: 'RATE_LIMITED', retryable: true };
+  if (status === 408) return { reason: 'TIMEOUT', retryable: true };
+  if (status === 404) return { reason: 'MODEL_UNAVAILABLE', retryable: false };
+  if (status === 400 || status === 422) return { reason: 'INVALID_REQUEST', retryable: false };
+  if (status >= 500 && status <= 599) return { reason: 'UPSTREAM_UNAVAILABLE', retryable: true };
+
   const text = message.toLowerCase();
-  if (status === 401 || status === 403 || /invalid.*(api|key)|authentication|unauthorized|forbidden|credential/i.test(text)) {
+  if (/invalid.*(api|key)|authentication|unauthorized|forbidden|credential/i.test(text)) {
     return { reason: 'AUTHENTICATION_FAILED', retryable: false };
   }
-  if (status === 404 || /model.*(not found|does not exist|unavailable)/i.test(text)) {
+  if (/model.*(not found|does not exist|unavailable)/i.test(text)) {
     return { reason: 'MODEL_UNAVAILABLE', retryable: false };
   }
-  if (status === 400 || status === 422 || /invalid (request|parameter)|validation error|malformed/i.test(text)) {
+  if (/invalid (request|parameter)|validation error|malformed/i.test(text)) {
     return { reason: 'INVALID_REQUEST', retryable: false };
   }
-  if (status === 429 || /rate.?limit|too many requests|quota exceeded|capacity/i.test(text)) {
+  if (/rate.?limit|too many requests|quota exceeded|capacity/i.test(text)) {
     return { reason: 'RATE_LIMITED', retryable: true };
   }
-  if (status === 408 || /timeout|timed out/i.test(text)) return { reason: 'TIMEOUT', retryable: true };
-  if (status >= 500 || /overload|overloaded|temporarily unavailable|upstream|bad gateway|service unavailable/i.test(text)) {
+  if (/timeout|timed out/i.test(text)) return { reason: 'TIMEOUT', retryable: true };
+  if (/overload|overloaded|temporarily unavailable|upstream|bad gateway|service unavailable/i.test(text)) {
     return { reason: 'UPSTREAM_UNAVAILABLE', retryable: true };
   }
   return { reason: RETRYABLE_STATUS.has(status) ? 'UPSTREAM_RETRYABLE_ERROR' : 'PROVIDER_ERROR', retryable: RETRYABLE_STATUS.has(status) };
@@ -214,11 +230,44 @@ function finalDiagnosticMessage(selectedModel: string, attempts: AttemptDiagnost
 }
 
 async function liveProviders(base: string, token: string): Promise<any[]> {
-  const response = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+  const response = await fetch(`${base}/models`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(MODEL_CATALOG_TIMEOUT_MS),
+  });
   if (!response.ok) return [];
   const json: any = await response.json();
   const list = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
   return list.map((item: any) => typeof item === 'string' ? { id: item } : item?.id ? { ...item, id: String(item.id) } : null).filter(Boolean);
+}
+
+function attachAbortListener(req: any, res: any, controller: AbortController) {
+  let disconnected = false;
+  const abort = () => {
+    if (disconnected || controller.signal.aborted) return;
+    disconnected = true;
+    controller.abort(new DOMException('Client disconnected.', 'AbortError'));
+  };
+  if (typeof req?.on === 'function') {
+    req.on('aborted', abort);
+  }
+  if (typeof res?.on === 'function') {
+    res.on('close', () => {
+      if (!res.writableEnded) abort();
+    });
+  }
+  return () => {
+    if (typeof req?.off === 'function') req.off('aborted', abort);
+  };
+}
+
+function abortReason(error: unknown): { reason: string; retryable: boolean } {
+  const message = errorText(error);
+  if (/client disconnected/i.test(message)) return { reason: 'CLIENT_DISCONNECTED', retryable: false };
+  if (error instanceof Error && (error.name === 'TimeoutError' || /timed out|timeout/i.test(message))) {
+    return { reason: 'TIMEOUT', retryable: true };
+  }
+  if (error instanceof Error && error.name === 'AbortError') return { reason: 'STREAM_INTERRUPTED', retryable: true };
+  return { reason: 'UPSTREAM_UNAVAILABLE', retryable: true };
 }
 
 export default async function handler(req: any, res: any) {
@@ -266,6 +315,8 @@ export default async function handler(req: any, res: any) {
   send(res, { type: 'route', requestedModel: requested, moonexModel: profile.id, modelName: profile.name });
 
   const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': keep-alive\n\n'); }, 15_000);
+  const requestController = new AbortController();
+  const detachAbortListener = attachAbortListener(req, res, requestController);
   const attempts: AttemptDiagnostic[] = [];
   let completed = false;
   let partialStream = false;
@@ -274,12 +325,20 @@ export default async function handler(req: any, res: any) {
     const candidates = rankedProviders.slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, rankedProviders.length));
 
     for (let attemptIndex = 0; attemptIndex < candidates.length; attemptIndex += 1) {
+      if (requestController.signal.aborted) break;
+
       const provider = candidates[attemptIndex];
       const providerName = providerLabel(provider);
       const modelId = String(provider.id);
       const started = Date.now();
       const maxTokens = Math.min(profile.maxTokens, providerMaxTokens(provider));
       let upstream: Response;
+
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(new DOMException('Upstream request timed out.', 'TimeoutError')), configuredTimeoutMs());
+      const abortHandler = () => timeoutController.abort(requestController.signal.reason || new DOMException('Client disconnected.', 'AbortError'));
+      if (requestController.signal.aborted) abortHandler();
+      else requestController.signal.addEventListener('abort', abortHandler, { once: true });
 
       try {
         upstream = await fetch(`${base}/chat/completions`, {
@@ -294,13 +353,21 @@ export default async function handler(req: any, res: any) {
             temperature: profile.temperature,
             max_tokens: maxTokens,
           }),
+          signal: timeoutController.signal,
         });
       } catch (error) {
+        clearTimeout(timeoutId);
+        requestController.signal.removeEventListener('abort', abortHandler);
         const message = errorText(error);
-        const classification = classifyProviderError(502, message);
-        attempts.push({ provider: providerName, model: modelId, status: 502, reason: classification.reason, retryable: classification.retryable, durationMs: Date.now() - started });
-        continue;
+        const aborted = timeoutController.signal.aborted;
+        const classification = aborted ? abortReason(timeoutController.signal.reason || error) : classifyProviderError(502, message);
+        attempts.push({ provider: providerName, model: modelId, status: classification.reason === 'TIMEOUT' ? 504 : 502, reason: classification.reason, retryable: classification.retryable, durationMs: Date.now() - started });
+        if (classification.reason === 'CLIENT_DISCONNECTED') break;
+        if (classification.retryable && attemptIndex + 1 < candidates.length) continue;
+        break;
       }
+      clearTimeout(timeoutId);
+      requestController.signal.removeEventListener('abort', abortHandler);
 
       if (!upstream.ok || !upstream.body) {
         const raw = await upstream.text().catch(() => '');
@@ -320,12 +387,46 @@ export default async function handler(req: any, res: any) {
       let providerStreamError = false;
       let providerStreamStatus = 200;
       let providerStreamMessage = '';
+      let streamTimedOut = false;
+      let lastActivity = Date.now();
+
+      const streamTimeoutMs = configuredTimeoutMs();
+      let streamTimeoutId = setTimeout(() => { streamTimedOut = true; }, streamTimeoutMs);
 
       try {
         while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          const readController = new AbortController();
+          const readTimeoutId = setTimeout(() => readController.abort(new DOMException('Upstream stream timed out.', 'TimeoutError')), streamTimeoutMs);
+          const requestAbortHandler = () => readController.abort(requestController.signal.reason || new DOMException('Client disconnected.', 'AbortError'));
+          if (requestController.signal.aborted) requestAbortHandler();
+          else requestController.signal.addEventListener('abort', requestAbortHandler, { once: true });
+
+          let result: ReadableStreamReadResult<Uint8Array>;
+          try {
+            result = await Promise.race([
+              reader.read(),
+              new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+                readController.signal.addEventListener('abort', () => reject(readController.signal.reason || new DOMException('Upstream stream timed out.', 'TimeoutError')), { once: true });
+              }),
+            ]);
+          } catch (error) {
+            providerStreamError = true;
+            const classification = abortReason(error);
+            providerStreamStatus = classification.reason === 'TIMEOUT' ? 504 : 502;
+            providerStreamMessage = errorText(error);
+          } finally {
+            clearTimeout(readTimeoutId);
+            requestController.signal.removeEventListener('abort', requestAbortHandler);
+          }
+
+          if (providerStreamError) break;
+          if (result.done) break;
+          if (result.value) {
+            lastActivity = Date.now();
+            clearTimeout(streamTimeoutId);
+            streamTimeoutId = setTimeout(() => { streamTimedOut = true; }, streamTimeoutMs);
+            buffer += decoder.decode(result.value, { stream: true });
+          }
           const lines = buffer.split(/\r?\n/);
           buffer = lines.pop() || '';
 
@@ -349,11 +450,20 @@ export default async function handler(req: any, res: any) {
             } catch {}
           }
           if (providerStreamError) break;
+          if (streamTimedOut || Date.now() - lastActivity > streamTimeoutMs) {
+            providerStreamError = true;
+            providerStreamStatus = 504;
+            providerStreamMessage = 'Upstream stream timed out.';
+            break;
+          }
         }
       } catch (error) {
         providerStreamError = true;
         providerStreamStatus = 502;
         providerStreamMessage = errorText(error);
+      } finally {
+        clearTimeout(streamTimeoutId);
+        await reader.cancel().catch(() => {});
       }
 
       buffer += decoder.decode();
@@ -377,14 +487,14 @@ export default async function handler(req: any, res: any) {
       if (providerStreamError) {
         const classification = classifyProviderError(providerStreamStatus, providerStreamMessage);
         attempts.push({ provider: providerName, model: modelId, status: providerStreamStatus, reason: classification.reason, retryable: classification.retryable, durationMs: Date.now() - started });
-        if (!emittedText && classification.retryable && attemptIndex + 1 < candidates.length) continue;
+        if (!emittedText && classification.retryable && attemptIndex + 1 < candidates.length && !requestController.signal.aborted) continue;
         partialStream = emittedText;
         break;
       }
 
       if (!emittedText) {
         attempts.push({ provider: providerName, model: modelId, status: 502, reason: 'EMPTY_STREAM', retryable: true, durationMs: Date.now() - started });
-        if (attemptIndex + 1 < candidates.length) continue;
+        if (attemptIndex + 1 < candidates.length && !requestController.signal.aborted) continue;
         break;
       }
 
@@ -393,7 +503,7 @@ export default async function handler(req: any, res: any) {
       break;
     }
 
-    if (!completed) {
+    if (!completed && !requestController.signal.aborted) {
       const last = attempts[attempts.length - 1];
       const retryable = attempts.some((attempt) => attempt.retryable);
       const code = partialStream ? 'STREAM_INTERRUPTED' : retryable ? 'PROVIDER_EXHAUSTED' : (last?.reason || 'PROVIDER_ERROR');
@@ -411,15 +521,19 @@ export default async function handler(req: any, res: any) {
       });
     }
   } catch (error) {
-    console.error('Moonex /api/chat failed:', error);
-    send(res, {
-      type: 'error',
-      error: errorText(error),
-      code: 'MOONEX_INTERNAL_ERROR',
-      moonexModel: profile.id,
-      attempts: attempts.map(publicAttempt),
-    });
+    if (!requestController.signal.aborted) {
+      console.error('Moonex /api/chat failed:', error);
+      send(res, {
+        type: 'error',
+        error: errorText(error),
+        code: 'MOONEX_INTERNAL_ERROR',
+        moonexModel: profile.id,
+        attempts: attempts.map(publicAttempt),
+      });
+    }
   } finally {
+    requestController.abort();
+    detachAbortListener();
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();
     if (rateBuckets.size > 5000) rateBuckets.clear();

@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../api/chat';
+import handler, { classifyProviderError } from '../api/chat';
 
 const originalFetch = globalThis.fetch;
+const originalTimeout = process.env.MOONEX_UPSTREAM_TIMEOUT_MS;
 
 function responseFor(body: string, status = 200, contentType = 'application/json') {
   return new Response(body, { status, headers: { 'Content-Type': contentType } });
@@ -115,4 +116,64 @@ test('retryable upstream overload fails over to the next ranked provider', async
   assert.doesNotMatch(stream, /\[object Object\]/);
 });
 
-test.after(() => { globalThis.fetch = originalFetch; });
+test('HTTP status classification is authoritative over misleading provider text', () => {
+  assert.deepEqual(classifyProviderError(502, 'invalid api key'), { reason: 'UPSTREAM_UNAVAILABLE', retryable: true });
+  assert.deepEqual(classifyProviderError(401, 'temporarily unavailable'), { reason: 'AUTHENTICATION_FAILED', retryable: false });
+  assert.deepEqual(classifyProviderError(429, 'invalid parameter'), { reason: 'RATE_LIMITED', retryable: true });
+});
+
+test('slow upstream streams are bounded by the per-request timeout', async () => {
+  process.env.MOONEX_UPSTREAM_TIMEOUT_MS = '10';
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([{ id: 'slow-provider', capabilities: allCapabilities }]));
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'));
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }) as typeof fetch;
+  const response = makeResponse();
+  await handler(request('moonex-code-1.5', 'Test timeout'), response);
+  const stream = response.chunks.join('');
+  assert.match(stream, /"type":"chunk"/);
+  assert.match(stream, /"type":"error"/);
+  assert.match(stream, /STREAM_INTERRUPTED|PROVIDER_EXHAUSTED|TIMEOUT/);
+});
+
+test('interrupted streams do not replay partial output through a fallback provider', async () => {
+  process.env.MOONEX_UPSTREAM_TIMEOUT_MS = '100';
+  let chatAttempt = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/models')) return responseFor(JSON.stringify([
+      { id: 'first-provider', capabilities: allCapabilities },
+      { id: 'backup-provider', capabilities: allCapabilities },
+    ]));
+    chatAttempt += 1;
+    if (chatAttempt === 1) {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+          setTimeout(() => controller.error(new Error('socket closed')), 5);
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    return new Response('data: {"choices":[{"delta":{"content":"fallback"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }) as typeof fetch;
+  const response = makeResponse();
+  await handler(request('moonex-code-1.5', 'Test interrupted stream'), response);
+  const stream = response.chunks.join('');
+  assert.equal(chatAttempt, 1);
+  assert.match(stream, /partial/);
+  assert.doesNotMatch(stream, /fallback/);
+  assert.match(stream, /STREAM_INTERRUPTED/);
+});
+
+test.after(() => {
+  globalThis.fetch = originalFetch;
+  if (originalTimeout === undefined) delete process.env.MOONEX_UPSTREAM_TIMEOUT_MS;
+  else process.env.MOONEX_UPSTREAM_TIMEOUT_MS = originalTimeout;
+});
