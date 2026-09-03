@@ -27,7 +27,7 @@ test('health reports all nine Moonex profiles covered by a four-provider catalog
     'openai/gpt-oss-120b': { id: 'openai/gpt-oss-120b', provider: 'groq', capabilities: { vision: false, reasoning: true, search: false, tools: true } },
     'gemini-2.5-flash': { id: 'gemini-2.5-flash', provider: 'google', capabilities: { vision: true, reasoning: false, search: true, tools: false } },
     'gemini-2.5-pro': { id: 'gemini-2.5-pro', provider: 'google', capabilities: { vision: true, reasoning: true, search: true, tools: false } },
-  }}));
+  }})));
   const response = makeResponse();
   await handler({ method: 'GET' }, response);
   assert.equal(response.statusCode, 200);
