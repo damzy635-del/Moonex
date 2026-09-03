@@ -42,105 +42,41 @@ export const DEFAULT_MOONEX_MODEL_ID = 'moonex-lite-1.5';
 export const AUTO_MODEL_ID = 'auto';
 
 export const MOONEX_MODELS: MoonexModelProfile[] = [
-  {
-    id: 'moonex-lite-1.5',
-    name: 'Moonex Lite 1.5',
-    description: 'Fast everyday conversations using cost-efficient production models.',
-    temperature: 0.35,
-    maxTokens: 2048,
-    preferredKeywords: ['gpt-5.6-luna', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'mistral-small-latest', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'],
-    fallbackIndex: 0,
-  },
-  {
-    id: 'moonex-fast-1.5',
-    name: 'Moonex Fast 1.5',
-    description: 'Low-latency answers using fast production models.',
-    temperature: 0.3,
-    maxTokens: 2048,
-    preferredKeywords: ['gpt-5.6-luna', 'gemini-3.6-flash', 'gemini-3.5-flash', 'mistral-small-latest', 'openai/gpt-oss-20b'],
-    fallbackIndex: 1,
-  },
-  {
-    id: 'moonex-pro-1.5',
-    name: 'Moonex Pro 1.5',
-    description: 'Balanced quality and speed using current frontier-class models.',
-    temperature: 0.45,
-    maxTokens: 4096,
-    preferredKeywords: ['gpt-5.6-terra', 'gemini-3.6-flash', 'gemini-3.7-flash', 'mistral-medium-latest', 'mistral-large-latest', 'openai/gpt-oss-120b'],
-    fallbackIndex: 2,
-  },
-  {
-    id: 'moonex-pro-max-1.5',
-    name: 'Moonex Pro Max 1.5',
-    description: 'Higher-quality general reasoning with long-context frontier models.',
-    temperature: 0.4,
-    maxTokens: 8192,
-    preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'mistral-medium-latest', 'mistral-large-latest', 'openai/gpt-oss-120b'],
-    fallbackIndex: 3,
-    requiredCapabilities: ['reasoning'],
-  },
-  {
-    id: 'moonex-ultra-1.5',
-    name: 'Moonex Ultra 1.5',
-    description: 'Maximum available general capability from the curated provider pool.',
-    temperature: 0.35,
-    maxTokens: 12288,
-    preferredKeywords: ['gpt-5.6-sol', 'gemini-3.1-pro-preview', 'gemini-3.7-flash', 'mistral-large-latest', 'mistral-medium-latest', 'openai/gpt-oss-120b'],
-    fallbackIndex: 4,
-    requiredCapabilities: ['reasoning'],
-  },
-  {
-    id: 'moonex-reasoning-1.5',
-    name: 'Moonex Reasoning 1.5',
-    description: 'Deeper reasoning for difficult problems and technical analysis.',
-    temperature: 0.25,
-    maxTokens: 12288,
-    preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.1-pro-preview', 'gemini-3.7-flash', 'mistral-medium-latest', 'openai/gpt-oss-120b'],
-    fallbackIndex: 5,
-    requiredCapabilities: ['reasoning'],
-  },
-  {
-    id: 'moonex-code-1.5',
-    name: 'Moonex Code 1.5',
-    description: 'Optimized for programming, debugging, and technical work.',
-    temperature: 0.2,
-    maxTokens: 8192,
-    preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.7-flash', 'mistral-medium-latest', 'codestral-latest', 'openai/gpt-oss-120b'],
-    fallbackIndex: 6,
-    requiredCapabilities: ['tools'],
-  },
-  {
-    id: 'moonex-vision-1.5',
-    name: 'Moonex Vision 1.5',
-    description: 'Multimodal tasks and image understanding.',
-    temperature: 0.35,
-    maxTokens: 4096,
-    preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'mistral-medium-latest'],
-    fallbackIndex: 7,
-    requiredCapabilities: ['vision'],
-  },
-  {
-    id: 'moonex-research-1.5',
-    name: 'Moonex Research 1.5',
-    description: 'Long-form analysis and current-information research using grounded web search.',
-    temperature: 0.3,
-    maxTokens: 12288,
-    preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-2.5-flash'],
-    fallbackIndex: 8,
-    requiredCapabilities: ['search'],
-  },
+  { id: 'moonex-lite-1.5', name: 'Moonex Lite 1.5', description: 'Fast everyday conversations using cost-efficient production models.', temperature: 0.35, maxTokens: 2048, preferredKeywords: ['gpt-5.6-luna', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'mistral-small-latest', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'], fallbackIndex: 0 },
+  { id: 'moonex-fast-1.5', name: 'Moonex Fast 1.5', description: 'Low-latency answers using fast production models.', temperature: 0.3, maxTokens: 2048, preferredKeywords: ['gpt-5.6-luna', 'gemini-3.6-flash', 'gemini-3.5-flash', 'mistral-small-latest', 'openai/gpt-oss-20b'], fallbackIndex: 1 },
+  { id: 'moonex-pro-1.5', name: 'Moonex Pro 1.5', description: 'Balanced quality and speed using current frontier-class models.', temperature: 0.45, maxTokens: 4096, preferredKeywords: ['gpt-5.6-terra', 'gemini-3.6-flash', 'gemini-3.7-flash', 'mistral-medium-latest', 'mistral-large-latest', 'openai/gpt-oss-120b'], fallbackIndex: 2 },
+  { id: 'moonex-pro-max-1.5', name: 'Moonex Pro Max 1.5', description: 'Higher-quality general reasoning with long-context frontier models.', temperature: 0.4, maxTokens: 8192, preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'mistral-medium-latest', 'mistral-large-latest', 'openai/gpt-oss-120b'], fallbackIndex: 3, requiredCapabilities: ['reasoning'] },
+  { id: 'moonex-ultra-1.5', name: 'Moonex Ultra 1.5', description: 'Maximum available general capability from the curated provider pool.', temperature: 0.35, maxTokens: 12288, preferredKeywords: ['gpt-5.6-sol', 'gemini-3.1-pro-preview', 'gemini-3.7-flash', 'mistral-large-latest', 'mistral-medium-latest', 'openai/gpt-oss-120b'], fallbackIndex: 4, requiredCapabilities: ['reasoning'] },
+  { id: 'moonex-reasoning-1.5', name: 'Moonex Reasoning 1.5', description: 'Deeper reasoning for difficult problems and technical analysis.', temperature: 0.25, maxTokens: 12288, preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.1-pro-preview', 'gemini-3.7-flash', 'mistral-medium-latest', 'openai/gpt-oss-120b'], fallbackIndex: 5, requiredCapabilities: ['reasoning'] },
+  { id: 'moonex-code-1.5', name: 'Moonex Code 1.5', description: 'Optimized for programming, debugging, and technical work.', temperature: 0.2, maxTokens: 8192, preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.7-flash', 'mistral-medium-latest', 'codestral-latest', 'openai/gpt-oss-120b'], fallbackIndex: 6, requiredCapabilities: ['tools'] },
+  { id: 'moonex-vision-1.5', name: 'Moonex Vision 1.5', description: 'Multimodal tasks and image understanding.', temperature: 0.35, maxTokens: 4096, preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'mistral-medium-latest'], fallbackIndex: 7, requiredCapabilities: ['vision'] },
+  { id: 'moonex-research-1.5', name: 'Moonex Research 1.5', description: 'Long-form analysis and current-information research using grounded web search.', temperature: 0.3, maxTokens: 12288, preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-2.5-flash'], fallbackIndex: 8, requiredCapabilities: ['search'] },
 ];
 
 function normalizedProviderId(model: ProviderModel) {
   return `${model.id} ${model.name || ''}`.toLowerCase();
 }
 
+const CURATED_CAPABILITIES: Record<'reasoning' | 'tools' | 'vision' | 'search', RegExp[]> = {
+  reasoning: [/^gpt-5\.6-/, /^gemini-3\.1-pro-preview$/, /^gemini-2\.5-pro$/, /^mistral-(medium|large)-latest$/, /^openai\/gpt-oss-120b$/],
+  tools: [/^gpt-5\.6-/, /^gemini-3\.7-flash$/, /^mistral-(medium|large)-latest$/, /^codestral-latest$/, /^openai\/gpt-oss-(20b|120b)$/],
+  vision: [/^gpt-5\.6-/, /^gemini-(3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-flash-lite|2\.5-(flash|flash-lite|pro))$/],
+  search: [/^gemini-(3\.7-flash|3\.6-flash|2\.5-(flash|pro))$/],
+};
+
+function supportsCuratedCapability(provider: ProviderModel, capability: 'reasoning' | 'tools' | 'vision' | 'search'): boolean {
+  const id = String(provider?.id || '').toLowerCase();
+  return CURATED_CAPABILITIES[capability].some((pattern) => pattern.test(id));
+}
+
 function supportsRequiredCapabilities(profile: MoonexModelProfile, provider: ProviderModel): boolean {
   const required = profile.requiredCapabilities || [];
   if (!required.length) return true;
   const capabilities = provider.capabilities;
-  if (!capabilities) return false;
-  return required.every((capability) => capabilities[capability] === true);
+  if (capabilities && typeof capabilities === 'object') {
+    return required.every((capability) => capabilities[capability] === true);
+  }
+  return required.every((capability) => supportsCuratedCapability(provider, capability));
 }
 
 export function isMoonexModelId(value: unknown): boolean {
