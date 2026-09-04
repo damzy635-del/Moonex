@@ -26,7 +26,7 @@ export type MoonexModelProfile = {
 };
 
 export type AutoRoutingContext = {
-  messages?: Array<{ role?: string; content?: unknown; files?: Array<{ mimeType?: string; type?: string }> }>;
+  messages?: Array<{ role?: string; content?: unknown; files?: Array<{ mimeType?: string; type?: string; name?: string }> }>;
   enableWebSearch?: boolean;
   thinkingLevel?: string;
 };
@@ -136,7 +136,7 @@ function hasAttachmentType(context: AutoRoutingContext, type: string): boolean {
 
 function hasCodeAttachment(context: AutoRoutingContext): boolean {
   return hasAttachmentType(context, 'code') || (context.messages || []).some((message) =>
-    (message.files || []).some((file) => /\.(ts|tsx|js|jsx|py|json|md|html|css|sql|sh|txt|csv)$/i.test(String((file as { name?: string }).name || '')))
+    (message.files || []).some((file) => /\.(ts|tsx|js|jsx|py|json|md|html|css|sql|sh|txt|csv)$/i.test(String(file.name || '')))
   );
 }
 
@@ -147,6 +147,20 @@ function hasDocumentAttachment(context: AutoRoutingContext): boolean {
       return mime === 'application/pdf' || mime.includes('wordprocessingml') || mime.includes('spreadsheetml') || mime.includes('presentationml');
     })
   );
+}
+
+function requiredCapabilitiesForContext(context: AutoRoutingContext): Array<'vision' | 'reasoning' | 'search' | 'tools'> {
+  const required: Array<'vision' | 'reasoning' | 'search' | 'tools'> = [];
+  if (hasImageAttachment(context)) required.push('vision');
+  if (context.enableWebSearch === true) required.push('search');
+  if (typeof context.thinkingLevel === 'string' && context.thinkingLevel !== 'none') required.push('reasoning');
+  if (hasCodeAttachment(context)) required.push('tools');
+  return [...new Set(required)];
+}
+
+function profileSupportsRequest(profile: MoonexModelProfile, required: Array<'vision' | 'reasoning' | 'search' | 'tools'>): boolean {
+  const capabilities = new Set(profile.requiredCapabilities || []);
+  return required.every((capability) => capabilities.has(capability));
 }
 
 function scoreMatches(text: string, patterns: RegExp, points: number): number {
@@ -200,5 +214,15 @@ export function classifyMoonexTask(context: AutoRoutingContext): MoonexModelProf
 }
 
 export function resolveMoonexProfile(modelId: string, context: AutoRoutingContext = {}): MoonexModelProfile {
-  return normalizeMoonexModelId(modelId) === AUTO_MODEL_ID ? classifyMoonexTask(context) : findMoonexModel(modelId);
+  if (normalizeMoonexModelId(modelId) === AUTO_MODEL_ID) return classifyMoonexTask(context);
+
+  const requestedProfile = findMoonexModel(modelId);
+  const required = requiredCapabilitiesForContext(context);
+  if (!required.length || profileSupportsRequest(requestedProfile, required)) return requestedProfile;
+
+  if (required.includes('vision')) return findMoonexModel('moonex-vision-1.5');
+  if (required.includes('search')) return findMoonexModel('moonex-research-1.5');
+  if (required.includes('reasoning')) return findMoonexModel('moonex-reasoning-1.5');
+  if (required.includes('tools')) return findMoonexModel('moonex-code-1.5');
+  return requestedProfile;
 }
