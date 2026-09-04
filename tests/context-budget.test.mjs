@@ -8,7 +8,7 @@ test('keeps system messages and newest conversation messages', () => {
     { role: 'assistant', content: 'middle '.repeat(100) },
     { role: 'user', content: 'new '.repeat(100) },
   ], {
-    maxInputTokens: 180,
+    maxInputTokens: 60,
     reservedOutputTokens: 20,
     systemMessages: [{ role: 'system', content: 'system instruction' }],
   });
