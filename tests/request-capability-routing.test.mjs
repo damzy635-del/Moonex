@@ -27,7 +27,7 @@ test('manual profile with code attachment escalates to Code', () => {
 });
 
 test('live routing applies the context budget while preserving the newest turn', () => {
-  const oldTurn = 'old context '.repeat(4_000);
+  const oldTurn = 'old context '.repeat(8_000);
   const activeTurn = 'active request '.repeat(2_000);
   const context = {
     messages: [
