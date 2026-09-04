@@ -27,7 +27,7 @@ export const FALLBACK_MODEL_INFO: ModelInfo = {
   description: 'Fast everyday conversations.',
   contextWindow: 'Profile dependent',
   supportsThinking: false,
-  supportsSearch: true,
+  supportsSearch: false,
   supportsVision: false,
   badge: 'Fast',
 };
@@ -41,7 +41,7 @@ export const STATIC_MOONEX_MODEL_CATALOG: ModelInfo[] = [
     description: model.description,
     contextWindow: 'Profile dependent',
     supportsThinking: model.id.includes('reasoning') || model.id.includes('ultra') || model.id.includes('pro'),
-    supportsSearch: true,
+    supportsSearch: model.id.includes('research'),
     supportsVision: model.id.includes('vision'),
     badge: model.id.includes('lite') || model.id.includes('fast')
       ? 'Fast'
