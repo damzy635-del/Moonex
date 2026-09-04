@@ -26,6 +26,27 @@ test('manual profile with code attachment escalates to Code', () => {
   assert.equal(profile.id, 'moonex-code-1.5');
 });
 
+test('live routing applies the context budget while preserving the newest turn', () => {
+  const oldTurn = 'old context '.repeat(8_000);
+  const activeTurn = 'active request '.repeat(2_000);
+  const context = {
+    messages: [
+      { role: 'system', content: 'Preserve this system instruction.' },
+      { role: 'user', content: oldTurn },
+      { role: 'assistant', content: 'Old assistant response.' },
+      { role: 'user', content: activeTurn },
+    ],
+  };
+
+  const profile = resolveMoonexProfile('moonex-pro-1.5', context);
+
+  assert.equal(profile.id, 'moonex-pro-1.5');
+  assert.equal(context.messages[0].role, 'system');
+  assert.equal(context.messages.at(-1).content, activeTurn);
+  assert.equal(context.contextBudget.truncated, true);
+  assert.ok(context.contextBudget.droppedMessages > 0);
+});
+
 test('capability routing does not create extra Moonex profiles', () => {
   assert.equal(MOONEX_MODELS.length, 9);
 });
