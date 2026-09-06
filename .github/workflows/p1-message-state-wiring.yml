@@ -18,20 +18,104 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path('src/App.tsx')
           text = path.read_text()
-          text = text.replace("import { normalizeMoonexModelId } from '../lib/moonex-models';\n", "import { normalizeMoonexModelId } from '../lib/moonex-models';\nimport {\n  prepareMessageEdit,\n  prepareMessageRegeneration,\n} from './utils/conversationActions';\n", 1)
-          old = '''  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage = (messageId: string, newContent: string) => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);\n    if (msgIndex === -1) return;\n\n    const targetMsg = currentConversation.messages[msgIndex];\n    // Keep messages strictly prior to this message\n    const trimmed = currentConversation.messages.slice(0, msgIndex);\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId ? { ...c, messages: trimmed } : c\n      )\n    );\n\n    // Resubmit with new content\n    handleSendMessage(newContent, targetMsg.files || []);\n  };\n\n  // Main chat sending & streaming method\n  const handleSendMessage = async (\n    text: string,\n    files: FileAttachment[] = [],\n    modelOverride?: string,\n  ) => {'''
-          new = '''  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage = (messageId: string, newContent: string) => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };\n\n  // Main chat sending & streaming method\n  const handleSendMessage = async (\n    text: string,\n    files: FileAttachment[] = [],\n    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {'''
-          if old not in text: raise SystemExit('edit/send anchor not found')
-          text = text.replace(old, new, 1)
-          text = text.replace("    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n", "    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n", 1)
-          text = text.replace("    const isFirstUserMessage = currentConversation.messages.length === 0;\n", "    const isFirstUserMessage = conversationMessages.length === 0;\n", 1)
-          text = text.replace("    const updatedMessages = [...currentConversation.messages, userMessage];\n", "    const updatedMessages = [...conversationMessages, userMessage];\n", 1)
-          old_regen = '''  const handleRegenerate = () => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const msgs = currentConversation.messages;\n    if (msgs.length === 0) return;\n\n    let lastUserMsgIndex = -1;\n    for (let i = msgs.length - 1; i >= 0; i--) {\n      if (msgs[i].role === 'user') {\n        lastUserMsgIndex = i;\n        break;\n      }\n    }\n\n    if (lastUserMsgIndex !== -1) {\n      const userMsg = msgs[lastUserMsgIndex];\n      const trimmed = msgs.slice(0, lastUserMsgIndex);\n      setConversations((prev) =>\n        prev.map((c) =>\n          c.id === activeConversationId ? { ...c, messages: trimmed } : c\n        )\n      );\n      handleSendMessage(userMsg.content, userMsg.files || []);\n    }\n  };'''
-          new_regen = '''  const handleRegenerate = () => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageRegeneration(currentConversation.messages);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };'''
-          if old_regen not in text: raise SystemExit('regeneration anchor not found')
-          text = text.replace(old_regen, new_regen, 1)
+
+          import_line = "import { normalizeMoonexModelId } from '../lib/moonex-models';\n"
+          helper_import = "import {\n  prepareMessageEdit,\n  prepareMessageRegeneration,\n} from './utils/conversationActions';\n"
+          if helper_import not in text:
+              if import_line not in text:
+                  raise SystemExit('Moonex import anchor not found')
+              text = text.replace(import_line, import_line + helper_import, 1)
+
+          edit_pattern = re.compile(r"  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage.*?\n  };\n\n  // Main chat sending & streaming method", re.S)
+          edit_replacement = '''  // Edit an earlier user message & resubmit from that point
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    if (!user || isAnonymous) {
+      setAuthModalMode('signin');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);
+    if (!mutation || !mutation.targetMessage) return;
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId
+          ? { ...c, messages: mutation.messages }
+          : c
+      )
+    );
+
+    handleSendMessage(
+      mutation.targetMessage.content,
+      mutation.targetMessage.files || [],
+      undefined,
+      mutation.messages,
+    );
+  };
+
+  // Main chat sending & streaming method'''
+          text, count = edit_pattern.subn(edit_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('edit block not found')
+
+          text = text.replace(
+              "    files: FileAttachment[] = [],\n    modelOverride?: string,\n  ) => {",
+              "    files: FileAttachment[] = [],\n    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {",
+              1,
+          )
+          text = text.replace(
+              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);",
+              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);",
+              1,
+          )
+          text = text.replace(
+              "    const isFirstUserMessage = currentConversation.messages.length === 0;",
+              "    const isFirstUserMessage = conversationMessages.length === 0;",
+              1,
+          )
+          text = text.replace(
+              "    const updatedMessages = [...currentConversation.messages, userMessage];",
+              "    const updatedMessages = [...conversationMessages, userMessage];",
+              1,
+          )
+
+          regen_pattern = re.compile(r"  const handleRegenerate = \(\) => \{.*?\n  };\n\n  // Text-to-Speech audio reader", re.S)
+          regen_replacement = '''  const handleRegenerate = () => {
+    if (!user || isAnonymous) {
+      setAuthModalMode('signin');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const mutation = prepareMessageRegeneration(currentConversation.messages);
+    if (!mutation || !mutation.targetMessage) return;
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId
+          ? { ...c, messages: mutation.messages }
+          : c
+      )
+    );
+
+    handleSendMessage(
+      mutation.targetMessage.content,
+      mutation.targetMessage.files || [],
+      undefined,
+      mutation.messages,
+    );
+  };
+
+  // Text-to-Speech audio reader'''
+          text, count = regen_pattern.subn(regen_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('regeneration block not found')
+
           path.write_text(text)
           PY
       - name: Commit and push
