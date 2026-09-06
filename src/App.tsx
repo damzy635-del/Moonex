@@ -39,6 +39,10 @@ import { useAuth } from './context/AuthContext';
 import { playPcmAudio, speakTextNative, stopAllSpeech } from './utils/audio';
 import { normalizeMoonexModelId } from '../lib/moonex-models';
 import {
+  prepareMessageEdit,
+  prepareMessageRegeneration,
+} from './utils/conversationActions';
+import {
   STATIC_MOONEX_MODEL_CATALOG,
   getMoonexDisplayName,
   mergeAvailableMoonexModels,
@@ -509,20 +513,24 @@ export default function App() {
       return;
     }
 
-    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);
-    if (msgIndex === -1) return;
+    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);
+    if (!mutation || !mutation.targetMessage) return;
 
-    const targetMsg = currentConversation.messages[msgIndex];
-    // Keep messages strictly prior to this message
-    const trimmed = currentConversation.messages.slice(0, msgIndex);
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === activeConversationId ? { ...c, messages: trimmed } : c
+        c.id === activeConversationId
+          ? { ...c, messages: mutation.messages }
+          : c
       )
     );
 
-    // Resubmit with new content
-    handleSendMessage(newContent, targetMsg.files || []);
+    // Pass the exact pre-edit prefix so React state timing cannot reintroduce stale history.
+    handleSendMessage(
+      mutation.targetMessage.content,
+      mutation.targetMessage.files || [],
+      undefined,
+      mutation.messages,
+    );
   };
 
   // Main chat sending & streaming method
@@ -530,6 +538,7 @@ export default function App() {
     text: string,
     files: FileAttachment[] = [],
     modelOverride?: string,
+    baseMessages?: Message[],
   ) => {
     // Guest Restriction: Redirect guests and unauthenticated users to login
     if (!user || isAnonymous) {
@@ -540,6 +549,7 @@ export default function App() {
 
     if ((!text.trim() && files.length === 0) || isStreaming) return;
 
+    const conversationMessages = baseMessages ?? currentConversation.messages;
     const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);
 
     // 1. Create User Message
@@ -552,12 +562,12 @@ export default function App() {
     };
 
     // Update conversation title if it's the first user message
-    const isFirstUserMessage = currentConversation.messages.length === 0;
+    const isFirstUserMessage = conversationMessages.length === 0;
     const newTitle = isFirstUserMessage
       ? text.slice(0, 36) || 'New Conversation'
       : currentConversation.title;
 
-    const updatedMessages = [...currentConversation.messages, userMessage];
+    const updatedMessages = [...conversationMessages, userMessage];
 
     // Optimistically update conversation
     setConversations((prev) =>
@@ -800,27 +810,24 @@ export default function App() {
       return;
     }
 
-    const msgs = currentConversation.messages;
-    if (msgs.length === 0) return;
+    const mutation = prepareMessageRegeneration(currentConversation.messages);
+    if (!mutation || !mutation.targetMessage) return;
 
-    let lastUserMsgIndex = -1;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === 'user') {
-        lastUserMsgIndex = i;
-        break;
-      }
-    }
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId
+          ? { ...c, messages: mutation.messages }
+          : c
+      )
+    );
 
-    if (lastUserMsgIndex !== -1) {
-      const userMsg = msgs[lastUserMsgIndex];
-      const trimmed = msgs.slice(0, lastUserMsgIndex);
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === activeConversationId ? { ...c, messages: trimmed } : c
-        )
-      );
-      handleSendMessage(userMsg.content, userMsg.files || []);
-    }
+    // Reuse the exact prefix and original user turn; do not duplicate the turn.
+    handleSendMessage(
+      mutation.targetMessage.content,
+      mutation.targetMessage.files || [],
+      undefined,
+      mutation.messages,
+    );
   };
 
   // Text-to-Speech audio reader
