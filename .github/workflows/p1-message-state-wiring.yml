@@ -14,51 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Apply frontend state-integrity wiring
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path('src/App.tsx')
           text = path.read_text()
-
-          text = text.replace(
-              "import { normalizeMoonexModelId } from '../lib/moonex-models';\n",
-              "import { normalizeMoonexModelId } from '../lib/moonex-models';\nimport {\n  prepareMessageEdit,\n  prepareMessageRegeneration,\n} from './utils/conversationActions';\n",
-              1,
-          )
-
+          text = text.replace("import { normalizeMoonexModelId } from '../lib/moonex-models';\n", "import { normalizeMoonexModelId } from '../lib/moonex-models';\nimport {\n  prepareMessageEdit,\n  prepareMessageRegeneration,\n} from './utils/conversationActions';\n", 1)
           old = '''  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage = (messageId: string, newContent: string) => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);\n    if (msgIndex === -1) return;\n\n    const targetMsg = currentConversation.messages[msgIndex];\n    // Keep messages strictly prior to this message\n    const trimmed = currentConversation.messages.slice(0, msgIndex);\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId ? { ...c, messages: trimmed } : c\n      )\n    );\n\n    // Resubmit with new content\n    handleSendMessage(newContent, targetMsg.files || []);\n  };\n\n  // Main chat sending & streaming method\n  const handleSendMessage = async (\n    text: string,\n    files: FileAttachment[] = [],\n    modelOverride?: string,\n  ) => {'''
-          new = '''  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage = (messageId: string, newContent: string) => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    // Pass the exact pre-edit prefix so React state timing cannot reintroduce stale history.\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };\n\n  // Main chat sending & streaming method\n  const handleSendMessage = async (\n    text: string,\n    files: FileAttachment[] = [],\n    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {'''
-          if old not in text:
-              raise SystemExit('edit/send anchor not found')
+          new = '''  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage = (messageId: string, newContent: string) => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };\n\n  // Main chat sending & streaming method\n  const handleSendMessage = async (\n    text: string,\n    files: FileAttachment[] = [],\n    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {'''
+          if old not in text: raise SystemExit('edit/send anchor not found')
           text = text.replace(old, new, 1)
-
-          text = text.replace(
-              "    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n",
-              "    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n",
-              1,
-          )
-          text = text.replace(
-              "    const isFirstUserMessage = currentConversation.messages.length === 0;\n",
-              "    const isFirstUserMessage = conversationMessages.length === 0;\n",
-              1,
-          )
-          text = text.replace(
-              "    const updatedMessages = [...currentConversation.messages, userMessage];\n",
-              "    const updatedMessages = [...conversationMessages, userMessage];\n",
-              1,
-          )
-
+          text = text.replace("    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n", "    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);\n", 1)
+          text = text.replace("    const isFirstUserMessage = currentConversation.messages.length === 0;\n", "    const isFirstUserMessage = conversationMessages.length === 0;\n", 1)
+          text = text.replace("    const updatedMessages = [...currentConversation.messages, userMessage];\n", "    const updatedMessages = [...conversationMessages, userMessage];\n", 1)
           old_regen = '''  const handleRegenerate = () => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const msgs = currentConversation.messages;\n    if (msgs.length === 0) return;\n\n    let lastUserMsgIndex = -1;\n    for (let i = msgs.length - 1; i >= 0; i--) {\n      if (msgs[i].role === 'user') {\n        lastUserMsgIndex = i;\n        break;\n      }\n    }\n\n    if (lastUserMsgIndex !== -1) {\n      const userMsg = msgs[lastUserMsgIndex];\n      const trimmed = msgs.slice(0, lastUserMsgIndex);\n      setConversations((prev) =>\n        prev.map((c) =>\n          c.id === activeConversationId ? { ...c, messages: trimmed } : c\n        )\n      );\n      handleSendMessage(userMsg.content, userMsg.files || []);\n    }\n  };'''
-          new_regen = '''  const handleRegenerate = () => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageRegeneration(currentConversation.messages);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    // Reuse the exact prefix and original user turn; do not duplicate the turn.\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };'''
-          if old_regen not in text:
-              raise SystemExit('regeneration anchor not found')
+          new_regen = '''  const handleRegenerate = () => {\n    if (!user || isAnonymous) {\n      setAuthModalMode('signin');\n      setIsAuthModalOpen(true);\n      return;\n    }\n\n    const mutation = prepareMessageRegeneration(currentConversation.messages);\n    if (!mutation || !mutation.targetMessage) return;\n\n    setConversations((prev) =>\n      prev.map((c) =>\n        c.id === activeConversationId\n          ? { ...c, messages: mutation.messages }\n          : c\n      )\n    );\n\n    handleSendMessage(\n      mutation.targetMessage.content,\n      mutation.targetMessage.files || [],\n      undefined,\n      mutation.messages,\n    );\n  };'''
+          if old_regen not in text: raise SystemExit('regeneration anchor not found')
           text = text.replace(old_regen, new_regen, 1)
-
           path.write_text(text)
           PY
-
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
