@@ -1,91 +1,62 @@
 name: P1.5 message state wiring
-
 on:
   push:
-    branches:
-      - fix/p1-message-state-integrity-wiring-v1
-
+    branches: [fix/p1-message-state-integrity-wiring-v1]
 permissions:
   contents: write
-
 jobs:
   wire:
-    if: ${{ !contains(github.event.head_commit.message, 'P1.5 message state wiring applied') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply frontend state-integrity wiring
+      - name: Wire App.tsx
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          p = Path('src/App.tsx')
+          s = p.read_text()
 
-          path = Path('src/App.tsx')
-          text = path.read_text()
-
-          import_line = "import { normalizeMoonexModelId } from '../lib/moonex-models';\n"
-          helper_import = "import {\n  prepareMessageEdit,\n  prepareMessageRegeneration,\n} from './utils/conversationActions';\n"
-          if helper_import not in text:
-              if import_line not in text:
-                  raise SystemExit('Moonex import anchor not found')
-              text = text.replace(import_line, import_line + helper_import, 1)
-
-          edit_pattern = re.compile(r"  // Edit an earlier user message & resubmit from that point\n  const handleEditMessage.*?\n  };\n\n  // Main chat sending & streaming method", re.S)
-          edit_replacement = '''  // Edit an earlier user message & resubmit from that point
-  const handleEditMessage = (messageId: string, newContent: string) => {
-    if (!user || isAnonymous) {
-      setAuthModalMode('signin');
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);
-    if (!mutation || !mutation.targetMessage) return;
-
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConversationId
-          ? { ...c, messages: mutation.messages }
-          : c
-      )
-    );
-
-    handleSendMessage(
-      mutation.targetMessage.content,
-      mutation.targetMessage.files || [],
-      undefined,
-      mutation.messages,
-    );
-  };
-
-  // Main chat sending & streaming method'''
-          text, count = edit_pattern.subn(edit_replacement, text, count=1)
-          if count != 1:
-              raise SystemExit('edit block not found')
-
-          text = text.replace(
-              "    files: FileAttachment[] = [],\n    modelOverride?: string,\n  ) => {",
-              "    files: FileAttachment[] = [],\n    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {",
-              1,
-          )
-          text = text.replace(
-              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);",
-              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);",
-              1,
-          )
-          text = text.replace(
-              "    const isFirstUserMessage = currentConversation.messages.length === 0;",
-              "    const isFirstUserMessage = conversationMessages.length === 0;",
-              1,
-          )
-          text = text.replace(
-              "    const updatedMessages = [...currentConversation.messages, userMessage];",
-              "    const updatedMessages = [...conversationMessages, userMessage];",
+          s = s.replace(
+              "import { normalizeMoonexModelId } from '../lib/moonex-models';",
+              "import { normalizeMoonexModelId } from '../lib/moonex-models';\nimport { prepareMessageEdit, prepareMessageRegeneration } from './utils/conversationActions';",
               1,
           )
 
-          regen_pattern = re.compile(r"  const handleRegenerate = \(\) => \{.*?\n  };\n\n  // Text-to-Speech audio reader", re.S)
-          regen_replacement = '''  const handleRegenerate = () => {
+          s = s.replace(
+              "const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);\n    if (msgIndex === -1) return;\n\n    const targetMsg = currentConversation.messages[msgIndex];\n    // Keep messages strictly prior to this message\n    const trimmed = currentConversation.messages.slice(0, msgIndex);",
+              "const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);\n    if (!mutation || !mutation.targetMessage) return;\n\n    const trimmed = mutation.messages;",
+              1,
+          )
+          s = s.replace(
+              "    // Resubmit with new content\n    handleSendMessage(newContent, targetMsg.files || []);",
+              "    // Resubmit from the authoritative pre-edit snapshot.\n    handleSendMessage(mutation.targetMessage.content, mutation.targetMessage.files || [], undefined, mutation.messages);",
+              1,
+          )
+          s = s.replace(
+              "    modelOverride?: string,\n  ) => {",
+              "    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {",
+              1,
+          )
+          s = s.replace(
+              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const selectedModelId",
+              "    if ((!text.trim() && files.length === 0) || isStreaming) return;\n\n    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId",
+              1,
+          )
+          s = s.replace(
+              "const isFirstUserMessage = currentConversation.messages.length === 0;",
+              "const isFirstUserMessage = conversationMessages.length === 0;",
+              1,
+          )
+          s = s.replace(
+              "const updatedMessages = [...currentConversation.messages, userMessage];",
+              "const updatedMessages = [...conversationMessages, userMessage];",
+              1,
+          )
+
+          start = s.index('  const handleRegenerate = () => {')
+          end = s.index('\n\n  // Text-to-Speech audio reader', start)
+          s = s[:start] + '''  const handleRegenerate = () => {
     if (!user || isAnonymous) {
       setAuthModalMode('signin');
       setIsAuthModalOpen(true);
@@ -109,19 +80,13 @@ jobs:
       undefined,
       mutation.messages,
     );
-  };
+  };''' + s[end:]
 
-  // Text-to-Speech audio reader'''
-          text, count = regen_pattern.subn(regen_replacement, text, count=1)
-          if count != 1:
-              raise SystemExit('regeneration block not found')
-
-          path.write_text(text)
+          p.write_text(s)
           PY
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/App.tsx
-          git commit -m "P1.5 message state wiring applied"
+          git diff --cached --quiet && exit 0
+          git commit -m 'P1.5 message state wiring applied'
           git push
