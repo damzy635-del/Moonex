@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { prepareMessageEdit, prepareMessageRegeneration } from '../src/utils/conversationActions.ts';
-import type { Message } from '../src/types';
+import type { FileAttachment, Message } from '../src/types';
 
 const message = (id: string, role: Message['role'], content: string, files?: Message['files']): Message => ({
   id,
@@ -11,12 +11,22 @@ const message = (id: string, role: Message['role'], content: string, files?: Mes
   files,
 });
 
+const attachment = (overrides: Partial<FileAttachment> = {}): FileAttachment => ({
+  id: 'file-1',
+  name: 'diagram.png',
+  size: 1024,
+  type: 'image',
+  mimeType: 'image/png',
+  data: 'base64',
+  ...overrides,
+});
+
 test('edit uses the exact prefix before the target and preserves attachments', () => {
-  const attachment = { name: 'diagram.png', type: 'image', mimeType: 'image/png', data: 'base64' };
+  const file = attachment();
   const messages = [
     message('u1', 'user', 'first'),
     message('a1', 'assistant', 'answer'),
-    message('u2', 'user', 'old prompt', [attachment]),
+    message('u2', 'user', 'old prompt', [file]),
     message('a2', 'assistant', 'old answer'),
   ];
 
@@ -39,10 +49,18 @@ test('edit rejects an assistant message', () => {
 });
 
 test('regeneration removes the latest assistant response without duplicating the user turn', () => {
+  const file = attachment({
+    id: 'file-2',
+    name: 'file.txt',
+    size: 3,
+    type: 'document',
+    mimeType: 'text/plain',
+    data: 'abc',
+  });
   const messages = [
     message('u1', 'user', 'first'),
     message('a1', 'assistant', 'answer 1'),
-    message('u2', 'user', 'latest', [{ name: 'file.txt', type: 'text', mimeType: 'text/plain', data: 'abc' }]),
+    message('u2', 'user', 'latest', [file]),
     message('a2', 'assistant', 'answer 2'),
   ];
 
