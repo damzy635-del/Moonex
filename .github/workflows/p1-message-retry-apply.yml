@@ -1,77 +1,34 @@
-name: P1.6 retry wiring
+name: Apply P1.6 retry patch
+
 on:
   push:
-    branches: [feat/p1-message-retry-v1]
+    branches:
+      - feat/p1-message-retry-v1
+
 permissions:
   contents: write
+
 jobs:
   apply:
     if: ${{ !contains(github.event.head_commit.message, 'P1.6 retry wiring applied') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Apply retry wiring
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply patch
+        run: node scripts/apply-p1-6-retry.js
+
+      - name: Remove temporary patch tooling
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('src/App.tsx')
-          s = p.read_text()
-          anchor = "import { normalizeMoonexModelId } from '../lib/moonex-models';"
-          helper = "import { prepareMessageRetry } from './utils/conversationRetry';"
-          if helper not in s:
-              if anchor not in s: raise SystemExit('import anchor missing')
-              s = s.replace(anchor, anchor + '\n' + helper, 1)
-          old_edit = '''    const msgIndex = currentConversation.messages.findIndex((m) => m.id === messageId);
-    if (msgIndex === -1) return;
+          rm -f scripts/apply-p1-6-retry.js
+          rm -f .github/workflows/p1-message-retry-apply.yml
 
-    const targetMsg = currentConversation.messages[msgIndex];
-    // Keep messages strictly prior to this message
-    const trimmed = currentConversation.messages.slice(0, msgIndex);'''
-          new_edit = '''    const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent);
-    if (!mutation || !mutation.targetMessage) return;
-
-    const targetMsg = mutation.targetMessage;
-    const trimmed = mutation.messages;'''
-          if old_edit not in s: raise SystemExit('edit block missing')
-          s = s.replace(old_edit, new_edit, 1)
-          s = s.replace('handleSendMessage(newContent, targetMsg.files || []);', 'handleSendMessage(targetMsg.content, targetMsg.files || [], undefined, trimmed);', 1)
-          s = s.replace('    modelOverride?: string,\n  ) => {', '    modelOverride?: string,\n    baseMessages?: Message[],\n  ) => {', 1)
-          s = s.replace('    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);', '    const conversationMessages = baseMessages ?? currentConversation.messages;\n    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);', 1)
-          s = s.replace('const isFirstUserMessage = currentConversation.messages.length === 0;', 'const isFirstUserMessage = conversationMessages.length === 0;', 1)
-          s = s.replace('const updatedMessages = [...currentConversation.messages, userMessage];', 'const updatedMessages = [...conversationMessages, userMessage];', 1)
-          s = s.replace('  const handleRegenerate = () => {', '  const handleRegenerate = () => {', 1)
-          start = s.index('  const handleRegenerate = () => {')
-          end = s.index('\n\n  // Text-to-Speech audio reader', start)
-          new_regen = '''  const handleRegenerate = () => {
-    if (!user || isAnonymous) {
-      setAuthModalMode('signin');
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    const mutation = prepareMessageRegeneration(currentConversation.messages);
-    if (!mutation || !mutation.targetMessage) return;
-
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConversationId
-          ? { ...c, messages: mutation.messages }
-          : c
-      )
-    );
-
-    handleSendMessage(
-      mutation.targetMessage.content,
-      mutation.targetMessage.files || [],
-      undefined,
-      mutation.messages,
-    );
-  };'''
-          s = s[:start] + new_regen + s[end:]
-          p.write_text(s)
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/App.tsx
-          git commit -m 'P1.6 retry wiring applied'
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/components/MessageItem.tsx tests/conversation-retry.test.ts
+          git add -u scripts/apply-p1-6-retry.js .github/workflows/p1-message-retry-apply.yml
+          git commit -m "P1.6 retry wiring applied"
           git push
