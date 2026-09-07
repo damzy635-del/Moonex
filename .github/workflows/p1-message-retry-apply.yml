@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, 'P1.6 retry wiring applied') }}
+    if: "!contains(github.event.head_commit.message, 'P1.6 retry wiring applied')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,7 +28,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/App.tsx src/components/MessageItem.tsx tests/conversation-retry.test.ts
+          git add src/App.tsx src/components/MessageItem.tsx tests/conversation-retry.test.ts package.json
           git add -u scripts/apply-p1-6-retry.js .github/workflows/p1-message-retry-apply.yml
           git commit -m "P1.6 retry wiring applied"
           git push
