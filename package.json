@@ -9,7 +9,7 @@
     "start": "node server.cjs",
     "clean": "rm -rf dist server.cjs server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test tests/api-chat.test.ts tests/moonex-profile-matrix.test.ts tests/attachment-encoding.test.ts tests/moonex-models.test.mjs tests/provider-diagnostics.test.ts tests/telemetry.test.ts tests/model-presentation.test.ts tests/moonex-request-capabilities.test.mjs tests/request-capability-routing.test.mjs tests/context-budget.test.mjs tests/conversation-actions.test.ts"
+    "test": "node --import tsx --test tests/api-chat.test.ts tests/moonex-profile-matrix.test.ts tests/attachment-encoding.test.ts tests/moonex-models.test.mjs tests/provider-diagnostics.test.ts tests/telemetry.test.ts tests/model-presentation.test.ts tests/moonex-request-capabilities.test.mjs tests/request-capability-routing.test.mjs tests/context-budget.test.mjs tests/conversation-actions.test.ts tests/conversation-retry.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
