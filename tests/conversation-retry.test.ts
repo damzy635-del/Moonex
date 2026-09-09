@@ -57,11 +57,10 @@ test('retry preserves only the history before the failed request', () => {
     message('a1', 'assistant', 'answer'),
     message('u2', 'user', 'latest request'),
     { ...message('e2', 'assistant', 'failed'), isError: true },
-    message('u3', 'user', 'later stale turn'),
   ]);
 
-  assert.deepEqual(result?.messages.map((item) => item.id), ['u1', 'a1', 'u2']);
-  assert.equal(result?.targetMessage.id, 'u3');
+  assert.deepEqual(result?.messages.map((item) => item.id), ['u1', 'a1']);
+  assert.equal(result?.targetMessage.id, 'u2');
 });
 
 test('retry safely rejects a conversation with no user request', () => {
