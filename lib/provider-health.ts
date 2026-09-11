@@ -29,18 +29,22 @@ const BASE_COOLDOWN_MS = 2_000;
 const MAX_COOLDOWN_MS = 60_000;
 const SAFE_PROVIDERS = new Set(['openai', 'google', 'mistral', 'groq']);
 
+function providerFromModel(value: string): string | undefined {
+  if (/gemini|gemma|google/.test(value)) return 'google';
+  if (/gpt|openai|o[134]/.test(value)) return 'openai';
+  if (/mistral|mixtral|codestral/.test(value)) return 'mistral';
+  if (/llama|groq|compound/.test(value)) return 'groq';
+  return undefined;
+}
+
 function keyFor(value: unknown): string {
-  return String(value || 'unknown').trim().toLowerCase() || 'unknown';
+  const raw = String(value || 'unknown').trim().toLowerCase() || 'unknown';
+  return SAFE_PROVIDERS.has(raw) ? raw : providerFromModel(raw) || raw;
 }
 
 function providerLabel(value: unknown): string | undefined {
   const key = keyFor(value);
-  if (SAFE_PROVIDERS.has(key)) return key;
-  if (/gemini|gemma|google/.test(key)) return 'google';
-  if (/gpt|openai|o[134]/.test(key)) return 'openai';
-  if (/mistral|mixtral|codestral/.test(key)) return 'mistral';
-  if (/llama|groq|compound/.test(key)) return 'groq';
-  return undefined;
+  return SAFE_PROVIDERS.has(key) ? key : undefined;
 }
 
 function now() { return Date.now(); }
@@ -153,10 +157,10 @@ function installProviderFetchTelemetry(): void {
       }
     } catch {}
 
+    const identity = provider || model;
     try {
       const response = await originalFetch(input, init);
       const durationMs = now() - started;
-      const identity = provider || model;
       recordProviderOutcome(identity, {
         success: response.ok,
         latencyMs: durationMs,
@@ -167,8 +171,8 @@ function installProviderFetchTelemetry(): void {
       return response;
     } catch (error) {
       const durationMs = now() - started;
-      recordProviderOutcome(provider || model, { success: false, latencyMs: durationMs, retryable: true, reason: 'FETCH_ERROR' });
-      logMoonexTelemetry({ event: 'provider_request_error', provider: providerLabel(provider || model), model, status: 502, durationMs, reason: 'FETCH_ERROR', retryable: true });
+      recordProviderOutcome(identity, { success: false, latencyMs: durationMs, retryable: true, reason: 'FETCH_ERROR' });
+      logMoonexTelemetry({ event: 'provider_request_error', provider: providerLabel(identity), model, status: 502, durationMs, reason: 'FETCH_ERROR', retryable: true });
       throw error;
     }
   }) as typeof fetch;
