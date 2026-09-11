@@ -9,6 +9,10 @@ export type MoonexTelemetryEvent = {
   retryable?: boolean;
   fallbackCount?: number;
   confidence?: number;
+  qualityScore?: number;
+  healthScore?: number;
+  latencyScore?: number;
+  candidateCount?: number;
 };
 
 const SAFE_PROVIDER_NAMES = new Set(['openai', 'google', 'mistral', 'groq']);
@@ -26,6 +30,10 @@ function cleanModel(value: unknown): string | undefined {
   return normalized;
 }
 
+function cleanScore(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, Number(value.toFixed(2)))) : undefined;
+}
+
 export function createMoonexTelemetryEvent(input: MoonexTelemetryEvent): MoonexTelemetryEvent {
   return {
     event: String(input.event).slice(0, 80),
@@ -34,10 +42,14 @@ export function createMoonexTelemetryEvent(input: MoonexTelemetryEvent): MoonexT
     ...(cleanModel(input.model) ? { model: cleanModel(input.model) } : {}),
     ...(cleanModel(input.moonexModel) ? { moonexModel: cleanModel(input.moonexModel) } : {}),
     ...(Number.isInteger(input.status) ? { status: input.status } : {}),
-    ...(typeof input.reason === 'string' ? { reason: input.reason.slice(0, 80) } : {}),
+    ...(typeof input.reason === 'string' ? { reason: input.reason.slice(0, 120) } : {}),
     ...(typeof input.retryable === 'boolean' ? { retryable: input.retryable } : {}),
     ...(Number.isInteger(input.fallbackCount) ? { fallbackCount: Math.max(0, input.fallbackCount!) } : {}),
     ...(typeof input.confidence === 'number' && Number.isFinite(input.confidence) ? { confidence: Math.max(0, Math.min(1, input.confidence)) } : {}),
+    ...(cleanScore(input.qualityScore) !== undefined ? { qualityScore: cleanScore(input.qualityScore) } : {}),
+    ...(cleanScore(input.healthScore) !== undefined ? { healthScore: cleanScore(input.healthScore) } : {}),
+    ...(cleanScore(input.latencyScore) !== undefined ? { latencyScore: cleanScore(input.latencyScore) } : {}),
+    ...(Number.isInteger(input.candidateCount) ? { candidateCount: Math.max(0, input.candidateCount!) } : {}),
   };
 }
 
