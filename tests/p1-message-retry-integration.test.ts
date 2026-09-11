@@ -17,8 +17,17 @@ test('P1.6 App wiring uses authoritative message snapshots', () => {
 });
 
 test('P1.6 edit, regenerate, and retry all resend from their prepared snapshot', () => {
-  assert.equal(countOccurrences(appSource, 'mutation.messages,\n    );'), 0, 'snapshot must be passed as the fourth send argument, not as a standalone value');
-  assert.equal(countOccurrences(appSource, 'undefined,\n      mutation.messages,\n    );'), 3);
+  const resendFromSnapshot = 'undefined,\n      mutation.messages,\n    );';
+  assert.equal(
+    countOccurrences(appSource, resendFromSnapshot),
+    3,
+    'edit, regenerate, and retry must each pass the prepared snapshot as the fourth send argument',
+  );
+  assert.equal(
+    countOccurrences(appSource, 'handleSendMessage(\n      mutation.targetMessage.content'),
+    3,
+    'all three message mutations must resend through handleSendMessage',
+  );
   assert.match(appSource, /onRetry=\{handleRetryMessage\}/);
 });
 
