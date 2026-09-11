@@ -1,3 +1,5 @@
+import { logMoonexTelemetry } from './telemetry.js';
+
 export type ProviderHealthOutcome = {
   success: boolean;
   latencyMs?: number;
@@ -25,9 +27,20 @@ const MAX_SAMPLES = 40;
 const TTL_MS = 15 * 60_000;
 const BASE_COOLDOWN_MS = 2_000;
 const MAX_COOLDOWN_MS = 60_000;
+const SAFE_PROVIDERS = new Set(['openai', 'google', 'mistral', 'groq']);
 
 function keyFor(value: unknown): string {
   return String(value || 'unknown').trim().toLowerCase() || 'unknown';
+}
+
+function providerLabel(value: unknown): string | undefined {
+  const key = keyFor(value);
+  if (SAFE_PROVIDERS.has(key)) return key;
+  if (/gemini|gemma|google/.test(key)) return 'google';
+  if (/gpt|openai|o[134]/.test(key)) return 'openai';
+  if (/mistral|mixtral|codestral/.test(key)) return 'mistral';
+  if (/llama|groq|compound/.test(key)) return 'groq';
+  return undefined;
 }
 
 function now() { return Date.now(); }
@@ -59,15 +72,22 @@ export function recordProviderOutcome(provider: unknown, outcome: ProviderHealth
   if (outcome.success) {
     state.consecutiveFailures = 0;
     state.cooldownUntil = 0;
-    return;
+  } else {
+    state.consecutiveFailures += 1;
+    if (outcome.retryable !== false) {
+      const multiplier = Math.pow(2, Math.max(0, state.consecutiveFailures - 1));
+      state.cooldownUntil = Math.min(timestamp + BASE_COOLDOWN_MS * multiplier, timestamp + MAX_COOLDOWN_MS);
+    }
   }
 
-  state.consecutiveFailures += 1;
-  const retryable = outcome.retryable !== false;
-  if (retryable) {
-    const multiplier = Math.pow(2, Math.max(0, state.consecutiveFailures - 1));
-    state.cooldownUntil = Math.min(timestamp + BASE_COOLDOWN_MS * multiplier, timestamp + MAX_COOLDOWN_MS);
-  }
+  logMoonexTelemetry({
+    event: outcome.success ? 'provider_success' : 'provider_failure',
+    provider: providerLabel(provider),
+    durationMs: latency,
+    reason: outcome.reason,
+    retryable: outcome.retryable,
+    healthScore: providerHealth(provider).score,
+  });
 }
 
 export function providerHealth(provider: unknown): ProviderHealthSnapshot {
@@ -112,3 +132,47 @@ export function rankProvidersWithHealth<T extends Record<string, any>>(context: 
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map((entry) => entry.provider);
 }
+
+function installProviderFetchTelemetry(): void {
+  const globalScope = globalThis as typeof globalThis & { __moonexFetchTelemetryInstalled?: boolean; fetch?: typeof fetch };
+  if (globalScope.__moonexFetchTelemetryInstalled || typeof globalScope.fetch !== 'function') return;
+  const originalFetch = globalScope.fetch.bind(globalScope);
+  globalScope.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (!/\/chat\/completions(?:\?|$)/i.test(url)) return originalFetch(input, init);
+
+    const started = now();
+    let model = 'unknown';
+    let provider: unknown = undefined;
+    try {
+      const raw = typeof init?.body === 'string' ? init.body : '';
+      if (raw) {
+        const payload = JSON.parse(raw);
+        model = String(payload?.model || 'unknown');
+        provider = payload?.provider || undefined;
+      }
+    } catch {}
+
+    try {
+      const response = await originalFetch(input, init);
+      const durationMs = now() - started;
+      const identity = provider || model;
+      recordProviderOutcome(identity, {
+        success: response.ok,
+        latencyMs: durationMs,
+        retryable: response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500,
+        reason: response.ok ? 'HTTP_OK' : `HTTP_${response.status}`,
+      });
+      logMoonexTelemetry({ event: 'provider_request', provider: providerLabel(identity), model, status: response.status, durationMs });
+      return response;
+    } catch (error) {
+      const durationMs = now() - started;
+      recordProviderOutcome(provider || model, { success: false, latencyMs: durationMs, retryable: true, reason: 'FETCH_ERROR' });
+      logMoonexTelemetry({ event: 'provider_request_error', provider: providerLabel(provider || model), model, status: 502, durationMs, reason: 'FETCH_ERROR', retryable: true });
+      throw error;
+    }
+  }) as typeof fetch;
+  globalScope.__moonexFetchTelemetryInstalled = true;
+}
+
+installProviderFetchTelemetry();
