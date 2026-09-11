@@ -12,7 +12,7 @@ const message = (id: string, role: Message['role'], content: string, files?: Mes
 });
 
 test('edit uses the exact prefix before the target and preserves attachments', () => {
-  const attachment = { name: 'diagram.png', type: 'image', mimeType: 'image/png', data: 'base64' };
+  const attachment = { id: 'file-1', name: 'diagram.png', type: 'image' as const, mimeType: 'image/png', data: 'base64', size: 6 };
   const messages = [
     message('u1', 'user', 'first'),
     message('a1', 'assistant', 'answer'),
@@ -42,7 +42,7 @@ test('regeneration removes the latest assistant response without duplicating the
   const messages = [
     message('u1', 'user', 'first'),
     message('a1', 'assistant', 'answer 1'),
-    message('u2', 'user', 'latest', [{ name: 'file.txt', type: 'text', mimeType: 'text/plain', data: 'abc' }]),
+    message('u2', 'user', 'latest', [{ id: 'file-2', name: 'file.txt', type: 'document' as const, mimeType: 'text/plain', data: 'abc', size: 3 }]),
     message('a2', 'assistant', 'answer 2'),
   ];
 
