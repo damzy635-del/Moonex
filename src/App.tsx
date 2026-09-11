@@ -20,7 +20,6 @@ import {
   getSavedProjects,
   saveProjects,
   getSavedPreferences,
-  savePreferences,
   DEFAULT_PREFERENCES,
   INITIAL_CONVERSATION,
   extractArtifactsFromText,
@@ -619,93 +618,59 @@ export default function App() {
               <div ref={messagesEndRef} className="h-4 shrink-0" />
             </div>
           )}
-
-          <div className="shrink-0">
-            <ChatInput
-              onSend={handleSendMessage}
-              isStreaming={isStreaming}
-              onStop={handleStopStreaming}
-              preferences={preferences}
-              currentConversation={currentConversation}
-              projects={projects}
-              onOpenSettings={() => setIsSettingsModalOpen(true)}
-              onOpenResearch={() => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } setIsResearchModalOpen(true); }}
-              onToggleThinking={handleToggleThinking}
-              onToggleSearch={handleToggleSearch}
-              onChangeTone={handleChangeTone}
-              onNewConversation={handleNewConversation}
-              onOpenAuth={(mode) => { setAuthModalMode(mode || 'signin'); setIsAuthModalOpen(true); }}
-            />
-          </div>
         </main>
+
+        <footer className="shrink-0 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/90 to-transparent pt-2">
+          <ChatInput
+            onSendMessage={handleSendMessage} isStreaming={isStreaming} onStopStreaming={handleStopStreaming}
+            enableThinking={currentConversation.thinkingLevel !== 'none'} onToggleThinking={handleToggleThinking}
+            enableWebSearch={currentConversation.enableWebSearch} onToggleWebSearch={handleToggleSearch}
+            selectedModelName={getMoonexDisplayName(currentConversation.model)} isAuthenticated={!!user && !isAnonymous}
+            onRequireAuth={() => { setAuthModalMode('signin'); setIsAuthModalOpen(true); }} onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)}
+            currentTone={preferences.tone} onChangeTone={handleChangeTone}
+          />
+        </footer>
       </div>
 
-      {isArtifactPanelOpen && activeArtifact && (
-        <ArtifactPanel artifact={activeArtifact} onClose={() => setIsArtifactPanelOpen(false)} />
-      )}
+      <ArtifactPanel artifact={activeArtifact} isOpen={isArtifactPanelOpen} onClose={() => setIsArtifactPanelOpen(false)} onSendRefactorPrompt={(prompt) => handleSendMessage(prompt, [])} />
 
-      {isProjectsModalOpen && (
-        <ProjectsModal
-          projects={projects}
-          activeProjectId={activeProjectIdForModal}
-          onClose={() => setIsProjectsModalOpen(false)}
-          onSave={(project) => {
-            setProjects((prev) => {
-              const exists = prev.some((p) => p.id === project.id);
-              return exists ? prev.map((p) => p.id === project.id ? project : p) : [...prev, project];
-            });
-          }}
-          onDelete={(projectId) => setProjects((prev) => prev.filter((p) => p.id !== projectId))}
-        />
-      )}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} conversations={conversations} availableModels={availableModels}
+        projects={projects} currentModel={currentConversation.model} enableThinking={currentConversation.thinkingLevel !== 'none'} enableSearch={currentConversation.enableWebSearch}
+        onSelectConversation={(id) => { handleSelectConversation(id); setIsCommandPaletteOpen(false); }}
+        onSelectModel={(modelId) => { handleSelectModel(modelId); setIsCommandPaletteOpen(false); }}
+        onNewChat={() => { handleNewConversation(); setIsCommandPaletteOpen(false); }} onToggleThinking={handleToggleThinking} onToggleSearch={handleToggleSearch}
+        onOpenSettings={() => { setIsCommandPaletteOpen(false); setIsSettingsModalOpen(true); }}
+        onOpenResearch={() => { setIsCommandPaletteOpen(false); if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); } else setIsResearchModalOpen(true); }}
+        onOpenProjects={() => { setIsCommandPaletteOpen(false); setIsProjectsModalOpen(true); }}
+        onOpenPromptLibrary={() => { setIsCommandPaletteOpen(false); setIsPromptLibraryOpen(true); }}
+        onOpenShortcuts={() => { setIsCommandPaletteOpen(false); setIsShortcutsModalOpen(true); }}
+        onToggleTheme={handleToggleTheme} onExportChat={handleExportConversation} onClearChat={handleClearConversation}
+      />
 
-      {isResearchModalOpen && (
-        <DeepResearchModal
-          onClose={() => setIsResearchModalOpen(false)}
-          onComplete={(result) => {
-            const researchMessage: Message = {
-              id: `msg_research_${Date.now()}`, role: 'assistant', content: result.report, timestamp: Date.now(), groundingSources: result.sources,
-            };
-            setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: [...c.messages, researchMessage] } : c));
-            setIsResearchModalOpen(false);
-          }}
-        />
-      )}
-
-      {isSettingsModalOpen && (
-        <SettingsModal
-          preferences={preferences}
-          onClose={() => setIsSettingsModalOpen(false)}
-          onSave={(next) => { setPreferences(next); setIsSettingsModalOpen(false); }}
-        />
-      )}
-
-      {isAuthModalOpen && (
-        <AuthModal
-          mode={authModalMode}
-          onClose={() => setIsAuthModalOpen(false)}
-          onSwitchMode={(mode) => setAuthModalMode(mode)}
-        />
-      )}
-
-      {isCommandPaletteOpen && (
-        <CommandPalette
-          onClose={() => setIsCommandPaletteOpen(false)}
-          onNewConversation={handleNewConversation}
-          onOpenSettings={() => setIsSettingsModalOpen(true)}
-          onOpenResearch={() => setIsResearchModalOpen(true)}
-          onOpenProjects={() => setIsProjectsModalOpen(true)}
-        />
-      )}
-
-      {isShortcutsModalOpen && <ShortcutsModal onClose={() => setIsShortcutsModalOpen(false)} />}
-
-      {isPromptLibraryOpen && (
-        <PromptLibraryModal
-          onClose={() => setIsPromptLibraryOpen(false)}
-          onSelectPrompt={(prompt, model) => { if (model) handleSelectModel(model); handleSendMessage(prompt, [], model); }}
-        />
-      )}
+      <ShortcutsModal isOpen={isShortcutsModalOpen} onClose={() => setIsShortcutsModalOpen(false)} />
+      <PromptLibraryModal isOpen={isPromptLibraryOpen} onClose={() => setIsPromptLibraryOpen(false)} onSelectPrompt={(promptText) => { setIsPromptLibraryOpen(false); handleSendMessage(promptText, []); }} />
+      <AuthModal isOpen={isAuthModalOpen} initialMode={authModalMode} onClose={() => setIsAuthModalOpen(false)} />
+      <ProjectsModal
+        isOpen={isProjectsModalOpen} projects={projects} activeProjectId={activeProjectIdForModal} onClose={() => setIsProjectsModalOpen(false)}
+        onSaveProject={(updatedProj) => setProjects((prev) => {
+          const index = prev.findIndex((p) => p.id === updatedProj.id);
+          if (index >= 0) { const copy = [...prev]; copy[index] = updatedProj; return copy; }
+          return [...prev, updatedProj];
+        })}
+        onDeleteProject={(projId) => { if (user && !isAnonymous) deleteProjectFromCloud(user.uid, projId).catch(console.error); setProjects((prev) => prev.filter((p) => p.id !== projId)); }}
+        onSelectProjectAndChat={(projId) => handleNewConversation(projId)}
+      />
+      <DeepResearchModal
+        isOpen={isResearchModalOpen} onClose={() => setIsResearchModalOpen(false)}
+        onContinueInChat={(reportText) => { handleNewConversation(); handleSendMessage(`Here is my research briefing to analyze:\n\n${reportText}\n\nPlease provide key tactical insights and next steps based on this research.`); }}
+      />
+      <SettingsModal
+        isOpen={isSettingsModalOpen} preferences={preferences} availableModels={availableModels} onClose={() => setIsSettingsModalOpen(false)}
+        onSavePreferences={(newPrefs) => setPreferences({ ...newPrefs, defaultModel: normalizeMoonexModelId(newPrefs.defaultModel) })}
+        onReloadData={() => { setConversations(getSavedConversations()); setProjects(getSavedProjects()); setPreferences(getSavedPreferences()); }}
+        onOpenAuth={(mode) => { setAuthModalMode(mode || 'signin'); setIsAuthModalOpen(true); }}
+      />
     </div>
   );
 }
