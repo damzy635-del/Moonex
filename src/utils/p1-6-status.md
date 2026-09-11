@@ -1,0 +1,1 @@
+P1.6 status: retry/edit/regenerate helpers and regression coverage are present. Final App.tsx authoritative-snapshot wiring remains to be applied.
