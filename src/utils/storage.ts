@@ -1,6 +1,10 @@
 import { Conversation, Project, UserPreferences, Artifact } from '../types';
 import { DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
 
+declare global {
+  var savePreferences: (preferences: UserPreferences) => void;
+}
+
 const CONVERSATIONS_KEY = 'moonex_conversations_v1';
 const PROJECTS_KEY = 'moonex_projects_v1';
 const PREFERENCES_KEY = 'moonex_preferences_v1';
@@ -66,6 +70,11 @@ export function getSavedPreferences(): UserPreferences {
   }
 }
 export function savePreferences(preferences: UserPreferences): void { try { localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); } catch (e) { console.error('Error saving preferences:', e); } }
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.savePreferences = savePreferences;
+}
+
 export function exportAllData(): string { return JSON.stringify({ conversations: getSavedConversations(), projects: getSavedProjects(), preferences: getSavedPreferences(), exportedAt: new Date().toISOString(), version: '2.0' }, null, 2); }
 export function importAllData(jsonString: string): boolean { try { const data = JSON.parse(jsonString); if (Array.isArray(data.conversations)) saveConversations(data.conversations); if (Array.isArray(data.projects)) saveProjects(data.projects); if (data.preferences) savePreferences(data.preferences); return true; } catch (e) { console.error('Import failed:', e); return false; } }
 export function extractArtifactsFromText(text: string): Artifact[] { const artifacts: Artifact[] = []; const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g; let match; let count = 1; while ((match = codeBlockRegex.exec(text)) !== null) { const lang = (match[1] || 'text').toLowerCase(); const content = match[2].trim(); if (content.length > 20) { let type: Artifact['type'] = 'code'; let title = `Snippet ${count} (${lang.toUpperCase() || 'Text'})`; if (lang === 'html' || lang === 'svg') { type = lang === 'svg' ? 'svg' : 'html'; title = `Interactive Component ${count} (${lang.toUpperCase()})`; } else if (lang === 'json') { type = 'json'; title = `Structured Data ${count}`; } else if (lang === 'markdown' || lang === 'md') { type = 'markdown'; title = `Document ${count}`; } artifacts.push({ id: `art_${Date.now()}_${count}`, title, type, language: lang, content }); count++; } } return artifacts; }
