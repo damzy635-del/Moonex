@@ -217,8 +217,19 @@ function ambiguityScore(text: string): number {
 function isSimpleArithmeticOrConversion(text: string, complexity: number): boolean {
   if (complexity >= 0.35) return false;
   if (/\b(prove|proof|theorem|derive|algorithm|optimize|optimization|integral|derivative|matrix|eigen|calculus|complex analysis)\b/.test(text)) return false;
-  return /\b(calculate|compute|arithmetic|sum|difference|product|quotient|percentage|percent|add|subtract|multiply|divide|convert)\b/.test(text)
-    || /^[\d\s()+\-*/%^×÷.,=?]+$/.test(text.trim());
+
+  const arithmeticVerb = /\b(calculate|compute|arithmetic|sum|difference|product|quotient|percentage|percent|add|subtract|multiply|divide|convert)\b/.test(text);
+  const questionWrapper = /\b(?:what(?:'s| is)|how much is|how many is|calculate|compute)\b/.test(text);
+  const expressionOnly = /^[\d\s()+\-*/%^×÷.,=?]+$/.test(text.trim());
+
+  if (arithmeticVerb || expressionOnly) return true;
+  if (!questionWrapper) return false;
+
+  const compact = text
+    .replace(/\b(?:what(?:'s| is)|how much is|how many is|calculate|compute)\b/g, ' ')
+    .replace(/[?$]/g, ' ')
+    .trim();
+  return /^[\d\s()+\-*/%^×÷.,=]+$/.test(compact);
 }
 
 export function decideMoonexRoute(context: AutoRoutingContext): MoonexRoutingDecision {
