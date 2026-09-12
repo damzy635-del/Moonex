@@ -161,10 +161,12 @@ function installProviderFetchTelemetry(): void {
     try {
       const response = await originalFetch(input, init);
       const durationMs = now() - started;
+      const retryable = response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+      const providerSuccess = response.ok || (response.status >= 400 && response.status < 500 && !retryable);
       recordProviderOutcome(identity, {
-        success: response.ok,
+        success: providerSuccess,
         latencyMs: durationMs,
-        retryable: response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500,
+        retryable,
         reason: response.ok ? 'HTTP_OK' : `HTTP_${response.status}`,
       });
       logMoonexTelemetry({ event: 'provider_request', provider: providerLabel(identity), model, status: response.status, durationMs });
