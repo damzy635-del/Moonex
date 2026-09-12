@@ -15,13 +15,30 @@
     overflow: hidden;
     touch-action: manipulation;
   }
-  
-  /* Support iPhone notch / safe area padding */
+
   :root {
     --sat: env(safe-area-inset-top, 0px);
     --sar: env(safe-area-inset-right, 0px);
     --sab: env(safe-area-inset-bottom, 0px);
     --sal: env(safe-area-inset-left, 0px);
+  }
+
+  /* Keep keyboard focus visible without changing the existing visual language. */
+  :focus-visible {
+    outline: 2px solid rgba(129, 140, 248, 0.9);
+    outline-offset: 2px;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
   }
 }
 
@@ -58,4 +75,52 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* P3: keep streamed output visually active without expensive layout animation. */
+@keyframes moonex-stream-cursor {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
 
+.moonex-stream-cursor {
+  animation: moonex-stream-cursor 900ms steps(1, end) infinite;
+  will-change: opacity;
+}
+
+/* P3: subtle entrance for newly committed messages. */
+@keyframes moonex-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.moonex-message-in {
+  animation: moonex-message-in 180ms ease-out both;
+}
+
+/* Respect OS-level reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Mobile safe-area support for the fixed-height chat shell. */
+@media (max-width: 767px) {
+  #chat-input-box {
+    margin-bottom: max(0px, var(--sab));
+  }
+
+  #chat-textarea {
+    min-height: 42px;
+  }
+}
