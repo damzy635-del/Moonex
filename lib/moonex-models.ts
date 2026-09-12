@@ -214,6 +214,13 @@ function ambiguityScore(text: string): number {
   return Math.min(1, hits / 12);
 }
 
+function isSimpleArithmeticOrConversion(text: string, complexity: number): boolean {
+  if (complexity >= 0.35) return false;
+  if (/\b(prove|proof|theorem|derive|algorithm|optimize|optimization|integral|derivative|matrix|eigen|calculus|complex analysis)\b/.test(text)) return false;
+  return /\b(calculate|compute|arithmetic|sum|difference|product|quotient|percentage|percent|add|subtract|multiply|divide|convert)\b/.test(text)
+    || /^[\d\s()+\-*/%^×÷.,=?]+$/.test(text.trim());
+}
+
 export function decideMoonexRoute(context: AutoRoutingContext): MoonexRoutingDecision {
   const text = messageText(context);
   const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
@@ -225,6 +232,10 @@ export function decideMoonexRoute(context: AutoRoutingContext): MoonexRoutingDec
   if (required.includes('search')) return { profile: findMoonexModel('moonex-research-1.5'), confidence: 0.99, reason: 'explicit web-search capability requested', mode: 'auto' };
   if (/\b(latest|current|today|yesterday|tomorrow|this week|this month|news|research|sources?|citations?|look up|web search|recent|2026)\b/.test(text)) {
     return { profile: findMoonexModel('moonex-research-1.5'), confidence: 0.95, reason: 'current-information or research intent detected', mode: 'auto' };
+  }
+
+  if (isSimpleArithmeticOrConversion(text, complexity)) {
+    return { profile: findMoonexModel('moonex-lite-1.5'), confidence: 0.96, reason: 'straightforward arithmetic or conversion task detected', mode: 'auto' };
   }
 
   const scores = new Map(MOONEX_MODELS.map((model) => [model.id, 0]));
