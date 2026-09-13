@@ -20,10 +20,11 @@
 @keyframes moonex-message-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .moonex-message-in { animation: moonex-message-in 180ms ease-out both; }
 /* P3.5: dependency-free syntax token styling. */
-.moonex-code-keyword { font-weight: 600; }
-.moonex-code-builtin { text-decoration: none; }
-.moonex-code-number { font-variant-numeric: tabular-nums; }
-.moonex-code-comment { font-style: italic; opacity: 0.7; }
+.moonex-code-keyword { color: #c084fc; font-weight: 600; }
+.moonex-code-builtin { color: #67e8f9; }
+.moonex-code-number { color: #fbbf24; font-variant-numeric: tabular-nums; }
+.moonex-code-string { color: #86efac; }
+.moonex-code-comment { color: #94a3b8; font-style: italic; opacity: 0.8; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
