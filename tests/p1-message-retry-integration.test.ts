@@ -17,14 +17,14 @@ test('P1.6 App wiring uses authoritative message snapshots', () => {
 });
 
 test('P1.6 edit, regenerate, and retry all resend from their prepared snapshot', () => {
-  const resendFromSnapshot = 'undefined,\n      mutation.messages,\n    );';
+  const resendCalls = appSource.match(/handleSendMessage\(mutation\.targetMessage\.content, mutation\.targetMessage\.files \|\| \[\], undefined, mutation\.messages\)/g) || [];
   assert.equal(
-    countOccurrences(appSource, resendFromSnapshot),
+    resendCalls.length,
     3,
     'edit, regenerate, and retry must each pass the prepared snapshot as the fourth send argument',
   );
   assert.equal(
-    countOccurrences(appSource, 'handleSendMessage(\n      mutation.targetMessage.content'),
+    countOccurrences(appSource, 'handleSendMessage(mutation.targetMessage.content'),
     3,
     'all three message mutations must resend through handleSendMessage',
   );
@@ -32,6 +32,6 @@ test('P1.6 edit, regenerate, and retry all resend from their prepared snapshot',
 });
 
 test('P1.6 retry targets the original user request and does not duplicate it', () => {
-  assert.match(appSource, /mutation\.targetMessage\.content,\n      mutation\.targetMessage\.files \|\| \[\],\n      undefined,\n      mutation\.messages,/);
+  assert.match(appSource, /mutation\.targetMessage\.content,\s*mutation\.targetMessage\.files \|\| \[\],\s*undefined,\s*mutation\.messages,/);
   assert.match(appSource, /const mutation = prepareMessageRetry\(currentConversation\.messages\.slice\(0, errorIndex \+ 1\)\)/);
 });
