@@ -39,7 +39,7 @@ jobs:
               'handleSendMessage(mutation.targetMessage.content, '
               'mutation.targetMessage.files || [], undefined, mutation.messages)'
           )
-          source, count = pattern.subn(replacement, source)
+          source, count = pattern.subn(lambda _match: replacement, source)
           if count != 3:
               raise SystemExit(f'Expected exactly 3 P1.6 mutation resend calls, found {count}')
           app_path.write_text(source)
@@ -53,12 +53,24 @@ jobs:
 
           test_path = Path('tests/p1-message-retry-integration.test.ts')
           source = test_path.read_text()
-          source = re.sub(
-              r"const resendCalls = appSource\.match\([\s\S]*?\);\n  assert\.equal\(\n    resendCalls\.length,\n    3,",
-              "const resendCalls = appSource.match(/handleSendMessage\\(\\s*mutation\\.targetMessage\\.content,\\s*mutation\\.targetMessage\\.files \\|\\| \\[\\],\\s*undefined,\\s*mutation\\.messages\\s*\\)/g) || [];\\n  assert.equal(\\n    resendCalls.length,\\n    3,",
-              source,
-              count=1,
+          pattern = re.compile(
+              r"const resendCalls = appSource\.match\([\s\S]*?\);\n"
+              r"  assert\.equal\(\n"
+              r"    resendCalls\.length,\n"
+              r"    3,"
           )
+          replacement = (
+              "const resendCalls = appSource.match(/handleSendMessage\\(\\s*"
+              "mutation\\.targetMessage\\.content,\\s*"
+              "mutation\\.targetMessage\\.files \\|\\| \\[\\],\\s*"
+              "undefined,\\s*mutation\\.messages\\s*\\)/g) || [];\n"
+              "  assert.equal(\n"
+              "    resendCalls.length,\n"
+              "    3,"
+          )
+          source, count = pattern.subn(lambda _match: replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one P1.6 resend assertion block, found {count}')
           test_path.write_text(source)
 
       - name: Install dependencies
