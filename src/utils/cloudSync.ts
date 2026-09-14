@@ -52,7 +52,8 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
     saveConversations(merged);
 
     // Push local-only and newer-local records so the merged state becomes the
-    // source of truth for future devices. Older cloud records are not rewritten.
+    // source of truth for future devices. syncConversationToCloud performs an
+    // additional remote timestamp check to protect against stale concurrent writes.
     const cloudById = new Map(cloudConvs.map((conversation) => [conversation.id, conversation]));
     for (const conversation of merged) {
       const cloud = cloudById.get(conversation.id);
@@ -68,11 +69,18 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
   }
 }
 
-// 2. Sync single conversation to Firestore
+// 2. Sync single conversation to Firestore without allowing stale local state
+// to overwrite a newer cloud snapshot.
 export async function syncConversationToCloud(userId: string, conversation: Conversation): Promise<void> {
   try {
-    const docRef = doc(db, 'users', userId, 'conversations', conversation.id);
-    await setDoc(docRef, normalizeConversation(conversation), { merge: true });
+    const normalized = normalizeConversation(conversation);
+    const docRef = doc(db, 'users', userId, 'conversations', normalized.id);
+    const remote = await getDoc(docRef);
+    if (remote.exists()) {
+      const remoteConversation = normalizeConversation(remote.data() as Conversation);
+      if (remoteConversation.updatedAt >= normalized.updatedAt) return;
+    }
+    await setDoc(docRef, normalized, { merge: true });
   } catch (error) {
     console.warn('Failed to sync conversation to cloud:', error);
   }
