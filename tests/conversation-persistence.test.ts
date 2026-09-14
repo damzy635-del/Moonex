@@ -55,10 +55,9 @@ test('merge orders conversations by newest update', () => {
   assert.deepEqual(result.map((item) => item.id), ['new', 'middle', 'old']);
 });
 
-test('normalization maps legacy assistant model ids to the conversation model', () => {
+test('normalization maps a legacy assistant model id to the conversation model', () => {
   const result = normalizePersistedConversation({
     ...conversation('c1', 10),
-    model: 'moonex-pro-2',
     messages: [{
       id: 'a1',
       role: 'assistant',
@@ -68,8 +67,8 @@ test('normalization maps legacy assistant model ids to the conversation model', 
     }],
   });
 
-  assert.equal(result.model, 'moonex-pro-2');
-  assert.equal(result.messages[0].modelUsed, 'moonex-pro-2');
+  assert.equal(result.model, 'moonex-lite-1.5');
+  assert.equal(result.messages[0].modelUsed, 'moonex-lite-1.5');
 });
 
 test('persistence only writes when the conversation has advanced', () => {
