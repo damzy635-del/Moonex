@@ -10,7 +10,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Conversation, Project, UserPreferences } from '../types';
-import { DEFAULT_MOONEX_MODEL_ID } from '../../lib/moonex-models';
 import {
   getSavedConversations,
   saveConversations,
@@ -18,16 +17,12 @@ import {
   saveProjects,
   getSavedPreferences,
   savePreferences,
-  INITIAL_CONVERSATION,
-  INITIAL_PROJECT,
   DEFAULT_PREFERENCES,
 } from './storage';
 import {
   mergePersistedConversations,
   normalizePersistedConversation,
 } from './conversationPersistence';
-
-const MOONEX_DEFAULT_MODEL = DEFAULT_MOONEX_MODEL_ID;
 
 function normalizeConversation(conversation: Conversation): Conversation {
   return normalizePersistedConversation(conversation);
@@ -57,8 +52,7 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
     saveConversations(merged);
 
     // Push local-only and newer-local records so the merged state becomes the
-    // source of truth for future devices. Older cloud records are harmlessly
-    // overwritten only when the merged record is newer.
+    // source of truth for future devices. Older cloud records are not rewritten.
     const cloudById = new Map(cloudConvs.map((conversation) => [conversation.id, conversation]));
     for (const conversation of merged) {
       const cloud = cloudById.get(conversation.id);
