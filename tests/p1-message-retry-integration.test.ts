@@ -32,6 +32,6 @@ test('P1.6 edit, regenerate, and retry all resend from their prepared snapshot',
 });
 
 test('P1.6 retry targets the original user request and does not duplicate it', () => {
-  assert.match(appSource, /mutation\.targetMessage\.content,\s*mutation\.targetMessage\.files \|\| \[\],\s*undefined,\s*mutation\.messages,/);
+  assert.match(appSource, /mutation\.targetMessage\.content,\s*mutation\.targetMessage\.files \|\| \[\],\s*undefined,\s*mutation\.messages\b/);
   assert.match(appSource, /const mutation = prepareMessageRetry\(currentConversation\.messages\.slice\(0, errorIndex \+ 1\)\)/);
 });
