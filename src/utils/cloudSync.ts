@@ -10,38 +10,27 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Conversation, Project, UserPreferences } from '../types';
-import { DEFAULT_MOONEX_MODEL_ID, normalizeMoonexModelId } from '../../lib/moonex-models';
+import { DEFAULT_MOONEX_MODEL_ID } from '../../lib/moonex-models';
 import {
   getSavedConversations,
   saveConversations,
   getSavedProjects,
   saveProjects,
-    getSavedPreferences,
-    savePreferences,
-    INITIAL_CONVERSATION,
+  getSavedPreferences,
+  savePreferences,
+  INITIAL_CONVERSATION,
   INITIAL_PROJECT,
   DEFAULT_PREFERENCES,
 } from './storage';
+import {
+  mergePersistedConversations,
+  normalizePersistedConversation,
+} from './conversationPersistence';
 
 const MOONEX_DEFAULT_MODEL = DEFAULT_MOONEX_MODEL_ID;
 
 function normalizeConversation(conversation: Conversation): Conversation {
-  const model = normalizeMoonexModelId(conversation.model, MOONEX_DEFAULT_MODEL);
-
-  return {
-    ...conversation,
-    model,
-    messages: Array.isArray(conversation.messages)
-      ? conversation.messages.map((message) => ({
-          ...message,
-          // Legacy/provider IDs must never become the active UI model identity.
-          modelUsed:
-            message.role === 'assistant'
-              ? normalizeMoonexModelId(message.modelUsed, model)
-              : message.modelUsed,
-        }))
-      : [],
-  };
+  return normalizePersistedConversation(conversation);
 }
 
 // 1. Fetch all conversations for a user
@@ -50,9 +39,9 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
     const colRef = collection(db, 'users', userId, 'conversations');
     const q = query(colRef, orderBy('updatedAt', 'desc'));
     const snapshot = await getDocs(q);
+    const localConvs = getSavedConversations().map(normalizeConversation);
 
     if (snapshot.empty) {
-      const localConvs = getSavedConversations().map(normalizeConversation);
       for (const c of localConvs) {
         await syncConversationToCloud(userId, c);
       }
@@ -64,14 +53,21 @@ export async function fetchUserConversations(userId: string): Promise<Conversati
       cloudConvs.push(normalizeConversation(docSnap.data() as Conversation));
     });
 
-    saveConversations(cloudConvs);
+    const merged = mergePersistedConversations(localConvs, cloudConvs);
+    saveConversations(merged);
 
-    // Persist the normalized model IDs so old cloud data does not return on the next login.
-    for (const conversation of cloudConvs) {
-      await syncConversationToCloud(userId, conversation);
+    // Push local-only and newer-local records so the merged state becomes the
+    // source of truth for future devices. Older cloud records are harmlessly
+    // overwritten only when the merged record is newer.
+    const cloudById = new Map(cloudConvs.map((conversation) => [conversation.id, conversation]));
+    for (const conversation of merged) {
+      const cloud = cloudById.get(conversation.id);
+      if (!cloud || conversation.updatedAt > cloud.updatedAt) {
+        await syncConversationToCloud(userId, conversation);
+      }
     }
 
-    return cloudConvs;
+    return merged;
   } catch (error) {
     console.warn('Error fetching conversations from Firestore, using local cache:', error);
     return getSavedConversations().map(normalizeConversation);
@@ -94,7 +90,7 @@ export async function deleteConversationFromCloud(userId: string, conversationId
     const docRef = doc(db, 'users', userId, 'conversations', conversationId);
     await deleteDoc(docRef);
   } catch (error) {
-    console.warn('Failed to delete conversation from cloud:', error);
+    console.warn('Failed to delete conversation from Firestore:', error);
   }
 }
 
