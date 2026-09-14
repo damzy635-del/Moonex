@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Apply durable P1.6 snapshot wiring
+      - name: Normalize durable P1.6 snapshot wiring
         shell: python
         run: |
           from pathlib import Path
@@ -31,7 +31,8 @@ jobs:
           pattern = re.compile(
               r'handleSendMessage\(\s*'
               r'mutation\.targetMessage\.content,\s*'
-              r'mutation\.targetMessage\.files\s*\|\|\s*\[\](?:\s*,\s*undefined)?'
+              r'mutation\.targetMessage\.files\s*\|\|\s*\[\]'
+              r'(?:\s*,\s*undefined)?'
               r'(?:\s*,\s*mutation\.messages)?\s*\)',
               re.MULTILINE,
           )
@@ -44,34 +45,6 @@ jobs:
               raise SystemExit(f'Expected exactly 3 P1.6 mutation resend calls, found {count}')
           app_path.write_text(source)
           print(f'Normalized {count} mutation resend calls.')
-
-      - name: Harden P1.6 regression assertion against formatting changes
-        shell: python
-        run: |
-          from pathlib import Path
-          import re
-
-          test_path = Path('tests/p1-message-retry-integration.test.ts')
-          source = test_path.read_text()
-          pattern = re.compile(
-              r"const resendCalls = appSource\.match\([\s\S]*?\);\n"
-              r"  assert\.equal\(\n"
-              r"    resendCalls\.length,\n"
-              r"    3,"
-          )
-          replacement = (
-              "const resendCalls = appSource.match(/handleSendMessage\\(\\s*"
-              "mutation\\.targetMessage\\.content,\\s*"
-              "mutation\\.targetMessage\\.files \\|\\| \\[\\],\\s*"
-              "undefined,\\s*mutation\\.messages\\s*\\)/g) || [];\n"
-              "  assert.equal(\n"
-              "    resendCalls.length,\n"
-              "    3,"
-          )
-          source, count = pattern.subn(lambda _match: replacement, source, count=1)
-          if count != 1:
-              raise SystemExit(f'Expected exactly one P1.6 resend assertion block, found {count}')
-          test_path.write_text(source)
 
       - name: Install dependencies
         run: npm install
@@ -91,7 +64,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           rm .github/workflows/repair-p1-message-mutations.yml
-          git add src/App.tsx tests/p1-message-retry-integration.test.ts .github/workflows/repair-p1-message-mutations.yml
+          git add src/App.tsx .github/workflows/repair-p1-message-mutations.yml
           git diff --cached --quiet && exit 0
           git commit -m 'fix: restore durable P1.6 mutation snapshot wiring'
           git push origin HEAD:phase-p3-chat-ux
