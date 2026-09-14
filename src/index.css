@@ -19,16 +19,22 @@
 .moonex-stream-cursor { animation: moonex-stream-cursor 900ms steps(1, end) infinite; will-change: opacity; }
 @keyframes moonex-message-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .moonex-message-in { animation: moonex-message-in 180ms ease-out both; }
-/* P3.5: dependency-free syntax token styling. */
-.moonex-code-keyword { color: #c084fc; font-weight: 600; }
-.moonex-code-builtin { color: #67e8f9; }
-.moonex-code-number { color: #fbbf24; font-variant-numeric: tabular-nums; }
-.moonex-code-string { color: #86efac; }
-.moonex-code-comment { color: #94a3b8; font-style: italic; opacity: 0.8; }
+.moonex-mobile-shell { min-height: 100dvh; min-height: -webkit-fill-available; }
+.moonex-mobile-scroll { overscroll-behavior-y: contain; scroll-padding-bottom: calc(5rem + var(--sab)); }
+.moonex-safe-top { padding-top: var(--sat); }
+.moonex-safe-bottom { padding-bottom: var(--sab); }
+@media (max-width: 767px) {
+  #chat-input-box { margin-bottom: max(0px, var(--sab)); }
+  #chat-textarea { min-height: 42px; max-height: min(220px, 32dvh); }
+  .moonex-mobile-composer { padding-left: max(0.75rem, var(--sal)); padding-right: max(0.75rem, var(--sar)); }
+  .moonex-mobile-touch { min-width: 44px; min-height: 44px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
-@media (max-width: 767px) {
-  #chat-input-box { margin-bottom: max(0px, var(--sab)); }
-  #chat-textarea { min-height: 42px; }
-}
+/* P3.5: dependency-free syntax token styling. */
+.moonex-code-keyword { color: #c084fc; font-weight: 600; }
+.moonex-code-builtin { color: #67e8f4; }
+.moonex-code-number { color: #fbbf24; font-variant-numeric: tabular-nums; }
+.moonex-code-string { color: #86efac; }
+.moonex-code-comment { color: #94a3b8; font-style: italic; opacity: 0.8; }
