@@ -1,61 +1,40 @@
 @import "tailwindcss";
 
 @layer base {
-  html {
-    color-scheme: dark;
-    height: 100%;
-    -webkit-text-size-adjust: 100%;
-  }
-  body {
-    @apply bg-[#0d0d0d] text-gray-200 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 0;
-    height: 100%;
-    width: 100%;
-    overflow: hidden;
-    touch-action: manipulation;
-  }
-  
-  /* Support iPhone notch / safe area padding */
-  :root {
-    --sat: env(safe-area-inset-top, 0px);
-    --sar: env(safe-area-inset-right, 0px);
-    --sab: env(safe-area-inset-bottom, 0px);
-    --sal: env(safe-area-inset-left, 0px);
-  }
+  html { color-scheme: dark; height: 100%; -webkit-text-size-adjust: 100%; }
+  body { @apply bg-[#0d0d0d] text-gray-200 antialiased; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; height: 100%; width: 100%; overflow: hidden; touch-action: manipulation; }
+  :root { --sat: env(safe-area-inset-top, 0px); --sar: env(safe-area-inset-right, 0px); --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px); }
+  :focus-visible { outline: 2px solid rgba(129, 140, 248, 0.9); outline-offset: 2px; }
+  button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+  button:disabled { cursor: not-allowed; }
 }
-
-/* Custom sleek dark scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.scroll-touch { -webkit-overflow-scrolling: touch; }
+@keyframes moonex-stream-cursor { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0.2; } }
+.moonex-stream-cursor { animation: moonex-stream-cursor 900ms steps(1, end) infinite; will-change: opacity; }
+@keyframes moonex-message-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.moonex-message-in { animation: moonex-message-in 180ms ease-out both; }
+.moonex-mobile-shell { min-height: 100dvh; min-height: -webkit-fill-available; }
+.moonex-mobile-scroll { overscroll-behavior-y: contain; scroll-padding-bottom: calc(5rem + var(--sab)); }
+.moonex-safe-top { padding-top: var(--sat); }
+.moonex-safe-bottom { padding-bottom: var(--sab); }
+@media (max-width: 767px) {
+  #chat-input-box { margin-bottom: max(0px, var(--sab)); }
+  #chat-textarea { min-height: 42px; max-height: min(220px, 32dvh); }
+  .moonex-mobile-composer { padding-left: max(0.75rem, var(--sal)); padding-right: max(0.75rem, var(--sar)); }
+  .moonex-mobile-touch { min-width: 44px; min-height: 44px; }
 }
-
-::-webkit-scrollbar-track {
-  background: transparent;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
-}
-
-/* Hide scrollbars for smooth touch scroll rows */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Smooth momentum scrolling on iOS */
-.scroll-touch {
-  -webkit-overflow-scrolling: touch;
-}
-
-
+/* P3.5: dependency-free syntax token styling. */
+.moonex-code-keyword { color: #c084fc; font-weight: 600; }
+.moonex-code-builtin { color: #67e8f4; }
+.moonex-code-number { color: #fbbf24; font-variant-numeric: tabular-nums; }
+.moonex-code-string { color: #86efac; }
+.moonex-code-comment { color: #94a3b8; font-style: italic; opacity: 0.8; }

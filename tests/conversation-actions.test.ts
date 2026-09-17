@@ -38,6 +38,15 @@ test('edit rejects an assistant message', () => {
   assert.equal(result, null);
 });
 
+test('edit rejects empty replacement content', () => {
+  const result = prepareMessageEdit(
+    [message('u1', 'user', 'prompt'), message('a1', 'assistant', 'answer')],
+    'u1',
+    '   ',
+  );
+  assert.equal(result, null);
+});
+
 test('regeneration removes the latest assistant response without duplicating the user turn', () => {
   const messages = [
     message('u1', 'user', 'first'),
@@ -52,6 +61,16 @@ test('regeneration removes the latest assistant response without duplicating the
   assert.equal(result?.targetMessage?.id, 'u2');
   assert.equal(result?.targetMessage?.content, 'latest');
   assert.equal(result?.targetMessage?.files?.[0].name, 'file.txt');
+});
+
+test('regeneration refuses a conversation whose latest user turn has no response yet', () => {
+  const messages = [
+    message('u1', 'user', 'first'),
+    message('a1', 'assistant', 'answer 1'),
+    message('u2', 'user', 'still generating'),
+  ];
+
+  assert.equal(prepareMessageRegeneration(messages), null);
 });
 
 test('regeneration is safe when there is no user turn', () => {

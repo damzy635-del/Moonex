@@ -20,6 +20,7 @@ export function prepareMessageEdit(
 
   const targetMessage = messages[index];
   if (targetMessage.role !== 'user') return null;
+  if (!newContent.trim()) return null;
 
   return {
     messages: messages.slice(0, index),
@@ -32,13 +33,19 @@ export function prepareMessageEdit(
 
 /**
  * Build the exact prefix and user turn used to regenerate the latest request.
- * The existing assistant response is excluded, so regeneration cannot replay
- * an orphaned assistant turn or duplicate the prior response.
+ * Regeneration is only valid when the latest user turn already has an
+ * assistant response after it. The existing response is excluded so the
+ * send path cannot replay or duplicate it.
  */
 export function prepareMessageRegeneration(messages: Message[]): ConversationMutation | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== 'user') continue;
+
+    const hasAssistantResponse = messages
+      .slice(index + 1)
+      .some((item) => item.role === 'assistant');
+    if (!hasAssistantResponse) return null;
 
     return {
       messages: messages.slice(0, index),
