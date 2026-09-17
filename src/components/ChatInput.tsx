@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { FileAttachment, UserPreferences } from '../types';
 import { validateAttachment } from '../utils/attachmentValidation';
+import { getAriaLiveState, getAriaToggleState } from '../utils/accessibility';
 
 interface ChatInputProps {
   onSendMessage: (content: string, files: FileAttachment[]) => void;
@@ -344,6 +345,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <textarea
               ref={textareaRef}
               id="chat-textarea"
+              aria-label="Message Moonex"
+              aria-describedby="chat-input-help"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -352,7 +355,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-hidden max-h-[220px]"
             />
             {isListening && (
-              <div className="flex items-center gap-2 px-4 pb-2 text-xs text-rose-400 font-medium">
+              <div {...getAriaLiveState()} className="flex items-center gap-2 px-4 pb-2 text-xs text-rose-400 font-medium">
                 <span className="flex items-center gap-1">
                   <span className="h-2 w-1 bg-rose-400 rounded-full animate-pulse" />
                   <span className="h-3.5 w-1 bg-rose-400 rounded-full animate-pulse" style={{ animationDelay: '100ms' }} />
@@ -382,6 +385,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="button"
               id="btn-attach-file"
+              aria-label="Attach images, PDFs, CSVs, or code files"
               onClick={() => {
                 if (!isAuthenticated) {
                   onRequireAuth?.();
@@ -390,14 +394,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 setAttachmentErrors([]);
                 fileInputRef.current?.click();
               }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+              className="moonex-mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
               title="Attach images, PDFs, CSVs, or code files"
             >
               <Paperclip className="h-4 w-4" />
             </button>
 
             {onOpenPromptLibrary && (
-              <button type="button" id="btn-prompt-library" onClick={() => {
+              <button type="button" id="btn-prompt-library" aria-label="Open prompt templates" onClick={() => {
                 if (!isAuthenticated) {
                   onRequireAuth?.();
                   return;
@@ -409,7 +413,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </button>
             )}
 
-            <button type="button" id="btn-toggle-thinking" onClick={() => {
+            <button type="button" id="btn-toggle-thinking" {...getAriaToggleState(enableThinking)} aria-label="Toggle deep thinking" onClick={() => {
               if (!isAuthenticated) {
                 onRequireAuth?.();
                 return;
@@ -420,7 +424,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <span className="hidden sm:inline">Thinking</span>
             </button>
 
-            <button type="button" id="btn-toggle-search" onClick={() => {
+            <button type="button" id="btn-toggle-search" {...getAriaToggleState(enableWebSearch)} aria-label="Toggle web search" onClick={() => {
               if (!isAuthenticated) {
                 onRequireAuth?.();
                 return;
@@ -433,7 +437,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
             {onChangeTone && (
               <div className="relative shrink-0">
-                <button type="button" onClick={() => setShowToneMenu(!showToneMenu)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors whitespace-nowrap" title="Adjust response tone">
+                <button type="button" aria-label="Adjust response tone" aria-expanded={showToneMenu} onClick={() => setShowToneMenu(!showToneMenu)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors whitespace-nowrap" title="Adjust response tone">
                   <Sliders className="h-3 w-3 text-indigo-400" />
                   <span className="capitalize text-[11px] hidden md:inline">{currentTone}</span>
                 </button>
@@ -456,7 +460,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </div>
             )}
 
-            <button type="button" id="btn-voice-dictation" onClick={toggleSpeechRecognition} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${isListening ? 'bg-rose-950 text-rose-400 animate-pulse border border-rose-800' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`} title={isListening ? 'Stop recording voice' : 'Dictate with voice'}>
+            <button type="button" id="btn-voice-dictation" aria-label={isListening ? "Stop voice dictation" : "Start voice dictation"} onClick={toggleSpeechRecognition} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${isListening ? 'bg-rose-950 text-rose-400 animate-pulse border border-rose-800' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`} title={isListening ? 'Stop recording voice' : 'Dictate with voice'}>
               {isListening ? <MicOff className="h-4 w-4 text-rose-400" /> : <Mic className="h-4 w-4" />}
             </button>
           </div>
@@ -464,11 +468,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             {content.length > 0 && <span className="hidden sm:inline-block text-[10px] text-gray-500 font-mono">{content.length} chars</span>}
             {isStreaming ? (
-              <button type="button" id="btn-stop-streaming" onClick={onStopStreaming} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-900 hover:bg-white shadow-xs transition-colors" title="Stop generation">
+              <button type="button" id="btn-stop-streaming" aria-label="Stop generation" onClick={onStopStreaming} className="moonex-mobile-touch flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-900 hover:bg-white shadow-xs transition-colors" title="Stop generation">
                 <Square className="h-3.5 w-3.5 fill-current" />
               </button>
             ) : (
-              <button type="button" id="btn-send-message" onClick={handleSubmit} disabled={isAuthenticated && (!content.trim() && files.length === 0)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-900 hover:bg-white disabled:opacity-20 disabled:pointer-events-none shadow-xs transition-all" title={isAuthenticated ? 'Send message (Enter)' : 'Sign in to send'}>
+              <button type="button" id="btn-send-message" aria-label={isAuthenticated ? "Send message" : "Sign in to send"} onClick={handleSubmit} disabled={isAuthenticated && (!content.trim() && files.length === 0)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-900 hover:bg-white disabled:opacity-20 disabled:pointer-events-none shadow-xs transition-all" title={isAuthenticated ? 'Send message (Enter)' : 'Sign in to send'}>
                 <ArrowUp className="h-4 w-4 stroke-[2.5]" />
               </button>
             )}
@@ -476,7 +480,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </div>
 
-      <div className="mt-1.5 text-center text-[11px] text-gray-500">Moonex can make mistakes. Verify important facts, code, and medical info.</div>
+      <div id="chat-input-help" className="mt-1.5 text-center text-[11px] text-gray-500">Moonex can make mistakes. Verify important facts, code, and medical info.</div>
     </div>
   );
 };
