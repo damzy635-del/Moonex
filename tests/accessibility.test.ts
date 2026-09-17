@@ -32,3 +32,14 @@ test('mobile interactive controls retain the 44px touch target contract', () => 
   assert.match(css, /\.moonex-mobile-touch\s*\{[^}]*min-width:\s*44px/);
   assert.match(css, /\.moonex-mobile-touch\s*\{[^}]*min-height:\s*44px/);
 });
+test('ChatInput integrates accessible labels, toggle state, live status, and touch targets', () => {
+  const source = fs.readFileSync('src/components/ChatInput.tsx', 'utf8');
+  assert.match(source, /getAriaToggleState\(enableThinking\)/);
+  assert.match(source, /getAriaToggleState\(enableWebSearch\)/);
+  assert.match(source, /aria-label="Message Moonex"/);
+  assert.match(source, /getAriaLiveState\(\)/);
+  assert.match(source, /aria-label="Attach images, PDFs, CSVs, or code files"/);
+  assert.match(source, /aria-label=\{isListening \? "Stop voice dictation" : "Start voice dictation"\}/);
+  assert.match(source, /moonex-mobile-touch/);
+  assert.match(source, /id="chat-input-help"/);
+});
