@@ -3,8 +3,8 @@ declare const process: {
 };
 
 declare const Buffer: {
-  from(input: string, encoding: 'base64'): {
-    toString(encoding: 'utf8'): string;
+  from(input: string, encoding?: 'base64' | 'utf8'): {
+    toString(encoding: 'base64' | 'utf8'): string;
   };
   byteLength(input: string, encoding?: string): number;
 };
