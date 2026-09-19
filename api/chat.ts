@@ -1,3 +1,4 @@
+import { tryAcquireConcurrency, releaseConcurrency, concurrencyState } from '../lib/concurrency.js';
 import {
   normalizeMoonexModelId,
   rankProviderModels,
@@ -282,6 +283,14 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  const concurrency = concurrencyState();
+  res.setHeader('X-Concurrency-Limit', String(concurrency.limit));
+  if (!tryAcquireConcurrency()) {
+    res.setHeader('Retry-After', '1');
+    res.status(503).json({ error: 'Moonex is at its concurrent request limit. Please retry shortly.', code: 'CONCURRENCY_LIMIT', retryAfter: 1 });
+    return;
+  }
+
   const base = baseUrl();
   const token = apiKey();
   if (!base || !token) { res.status(500).json({ error: 'Moonex AI backend is not configured. Set MYAI_API_URL and MYAI_API_KEY in Vercel.' }); return; }
@@ -536,6 +545,7 @@ export default async function handler(req: any, res: any) {
     detachAbortListener();
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();
+    releaseConcurrency();
     if (rateBuckets.size > 5000) rateBuckets.clear();
   }
 }
