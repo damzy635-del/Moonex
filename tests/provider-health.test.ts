@@ -25,3 +25,16 @@ test('health-aware ranking deprioritizes a cooling-down provider', () => {
   ]);
   assert.deepEqual(ranked.map((item) => item.id), ['healthy', 'unhealthy']);
 });
+
+
+test('provider health cache is bounded and removes expired inactive state', () => {
+  clearProviderHealth();
+  for (let index = 0; index < 32; index += 1) {
+    recordProviderOutcome(`provider-${index}`, { success: true, latencyMs: 100 });
+  }
+  const retained = [];
+  for (let index = 0; index < 32; index += 1) {
+    retained.push(providerHealth(`provider-${index}`));
+  }
+  assert.ok(retained.filter((item) => item.samples > 0).length <= 16);
+});

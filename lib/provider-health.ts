@@ -25,6 +25,9 @@ type State = { samples: Sample[]; consecutiveFailures: number; cooldownUntil: nu
 const states = new Map<string, State>();
 const MAX_SAMPLES = 40;
 const TTL_MS = 15 * 60_000;
+const MAX_PROVIDER_STATES = 16;
+const CLEANUP_INTERVAL_MS = 60_000;
+let lastCleanupAt = 0;
 const BASE_COOLDOWN_MS = 2_000;
 const MAX_COOLDOWN_MS = 60_000;
 const SAFE_PROVIDERS = new Set(['openai', 'google', 'mistral', 'groq']);
@@ -49,7 +52,24 @@ function providerLabel(value: unknown): string | undefined {
 
 function now() { return Date.now(); }
 
+function pruneExpiredStates(timestamp: number = now()): void {
+  if (timestamp - lastCleanupAt < CLEANUP_INTERVAL_MS && states.size <= MAX_PROVIDER_STATES) return;
+  lastCleanupAt = timestamp;
+
+  for (const [key, state] of states) {
+    state.samples = state.samples.filter((sample) => timestamp - sample.at <= TTL_MS);
+    const inactive = !state.samples.length && state.cooldownUntil <= timestamp && timestamp - state.lastOutcomeAt > TTL_MS;
+    if (inactive) states.delete(key);
+  }
+
+  if (states.size <= MAX_PROVIDER_STATES) return;
+  const ordered = [...states.entries()].sort((a, b) => a[1].lastOutcomeAt - b[1].lastOutcomeAt);
+  for (const [key] of ordered.slice(0, states.size - MAX_PROVIDER_STATES)) states.delete(key);
+}
+
 function getState(key: string): State {
+  const timestamp = now();
+  pruneExpiredStates(timestamp);
   const current = states.get(key);
   if (current) {
     current.samples = current.samples.filter((sample) => now() - sample.at <= TTL_MS);
@@ -62,6 +82,7 @@ function getState(key: string): State {
 
 export function clearProviderHealth(): void {
   states.clear();
+  lastCleanupAt = 0;
 }
 
 export function recordProviderOutcome(provider: unknown, outcome: ProviderHealthOutcome): void {
