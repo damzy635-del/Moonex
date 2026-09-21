@@ -5,7 +5,7 @@ const CHUNK_SIZE = 256;
 const MAX_MS = 500;
 
 function buildSseChunk(index: number): string {
-  return `data: ${JSON.stringify({ choices: [{ delta: { content: `token-${index}-${'x'.repeat(CHUNK_SIZE - 16)}` } }] })}\\n\\n`;
+  return `data: ${JSON.stringify({ choices: [{ delta: { content: `token-${index}-${'x'.repeat(CHUNK_SIZE - 16)}` } }] })}\n\n`;
 }
 
 const chunks = Array.from({ length: CHUNK_COUNT }, (_, index) => buildSseChunk(index));
@@ -14,7 +14,7 @@ let bytes = 0;
 const started = performance.now();
 
 for (const chunk of chunks) {
-  const lines = chunk.split(/\\r?\\n/);
+  const lines = chunk.split(/\r?\n/);
   for (const line of lines) {
     if (!line.startsWith('data:')) continue;
     const payload = line.slice(5).trim();
