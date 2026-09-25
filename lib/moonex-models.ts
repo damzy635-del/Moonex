@@ -70,7 +70,7 @@ export const MOONEX_MODELS: MoonexModelProfile[] = [
   { id: 'moonex-reasoning-1.5', name: 'Moonex Reasoning 1.5', description: 'Deeper reasoning for difficult problems and technical analysis.', temperature: 0.25, maxTokens: 12288, preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.1-pro-preview', 'gemini-3.7-flash', 'mistral-medium-latest', 'openai/gpt-oss-120b'], fallbackIndex: 5, requiredCapabilities: ['reasoning'] },
   { id: 'moonex-code-1.5', name: 'Moonex Code 1.5', description: 'Optimized for programming, debugging, and technical work.', temperature: 0.2, maxTokens: 8192, preferredKeywords: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gemini-3.7-flash', 'mistral-medium-latest', 'codestral-latest', 'openai/gpt-oss-120b'], fallbackIndex: 6, requiredCapabilities: ['tools'] },
   { id: 'moonex-vision-1.5', name: 'Moonex Vision 1.5', description: 'Multimodal tasks and image understanding.', temperature: 0.35, maxTokens: 4096, preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'mistral-medium-latest'], fallbackIndex: 7, requiredCapabilities: ['vision'] },
-  { id: 'moonex-research-1.5', name: 'Moonex Research 1.5', description: 'Long-form analysis and current-information research using grounded web search.', temperature: 0.3, maxTokens: 12288, preferredKeywords: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-2.5-flash'], fallbackIndex: 8, requiredCapabilities: ['search'] },
+  { id: 'moonex-research-1.5', name: 'Moonex Research 1.5', description: 'Long-form analysis and current-information research using grounded web search.', temperature: 0.3, maxTokens: 12288, preferredKeywords: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'], fallbackIndex: 8, requiredCapabilities: ['search'] },
 ];
 
 function normalizedProviderId(model: ProviderModel): string {
@@ -78,10 +78,10 @@ function normalizedProviderId(model: ProviderModel): string {
 }
 
 const CURATED_CAPABILITIES: Record<string, RegExp[]> = {
-  reasoning: [/^gpt-5\.6-/, /^gemini-3\.1-pro-preview$/, /^gemini-2\.5-pro$/, /^mistral-(medium|large)-latest$/, /^openai\/gpt-oss-120b$/],
-  tools: [/^gpt-5\.6-/, /^gemini-3\.7-flash$/, /^mistral-(medium|large)-latest$/, /^codestral-latest$/, /^openai\/gpt-oss-(20b|120b)$/],
-  vision: [/^gpt-5\.6-/, /^gemini-(3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-flash-lite|2\.5-(flash|flash-lite|pro))$/],
-  search: [/^gemini-(3\.7-flash|3\.6-flash|2\.5-(flash|pro))$/],
+  reasoning: [/^gpt-5\.6-/, /^gemini-3\.1-pro-preview$/, /^gemini-3\.8-flash$/, /^gemini-3\.7-flash$/, /^gemini-3\.6-flash$/, /^gemini-3\.5-flash$/, /^mistral-(medium|large)-latest$/, /^openai\/gpt-oss-120b$/],
+  tools: [/^gpt-5\.6-/, /^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash)$/, /^mistral-(medium|large)-latest$/, /^codestral-latest$/, /^openai\/gpt-oss-(20b|120b)$/],
+  vision: [/^gpt-5\.6-/, /^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-flash-lite|3\.1-pro-preview)$/],
+  search: [/^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-pro-preview)$/],
 };
 
 function supportsCuratedCapability(provider: ProviderModel, capability: string): boolean {
