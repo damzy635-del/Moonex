@@ -399,3 +399,148 @@ async function generateContentWithRetryAndFallback(
   generateParams: {
     contents: any;
     config?: any;
+  }
+) {
+  const candidateModels = getFallbackModels(primaryModel);
+  let lastErr: any = null;
+
+  for (const model of candidateModels) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const configCopy = { ...(generateParams.config || {}) };
+        // Adjust thinkingConfig if model doesn't support it
+        if (!model.includes("gemini-3.7")) {
+          delete configCopy.thinkingConfig;
+        }
+
+        const res = await ai.models.generateContent({
+          model,
+          contents: generateParams.contents,
+          config: configCopy,
+        });
+        return res;
+      } catch (err: any) {
+        lastErr = err;
+        console.warn(`generateContent failed on ${model} (attempt ${attempt + 1}):`, err?.message || err);
+        if (isTransientError(err) && attempt < 1) {
+          await delay(600 + Math.random() * 400);
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+  throw lastErr || new Error("Failed to generate content after retries and model fallbacks.");
+}
+
+// 3. Deep Research Workflow API — routes through My AI's unified API,
+// same as /api/chat and /api/models (see docs/MYAI_INTEGRATION.md).
+app.post("/api/research", async (req: Request, res: Response) => {
+  await researchApiHandler(req, res);
+});
+
+// 4. Voice Text-to-Speech API
+app.post("/api/tts", async (req: Request, res: Response) => {
+  try {
+    const { text, voice = "Kore" } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Text is required for TTS." });
+    }
+
+    const ai = getGenAI();
+
+    // Clean markdown elements from text for optimal audio narration
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, "Code block omitted from audio.")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/[*#_~\[\]]/g, "")
+      .trim()
+      .slice(0, 800); // Reasonable clip limit
+
+    let response: any = null;
+    let ttsError: any = null;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text: cleanText }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voice },
+              },
+            },
+          },
+        });
+        break;
+      } catch (err: any) {
+        ttsError = err;
+        if (isTransientError(err) && attempt < 1) {
+          await delay(500);
+          continue;
+        }
+        break;
+      }
+    }
+
+    const base64Audio = response?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      return res.status(500).json({
+        error: isTransientError(ttsError)
+          ? "TTS service busy, falling back to browser speech."
+          : "Could not generate speech audio.",
+      });
+    }
+
+    res.json({
+      audioBase64: base64Audio,
+      mimeType: "audio/pcm;rate=24000",
+      sampleRate: 24000,
+    });
+  } catch (error: any) {
+    console.error("Error in /api/tts:", error);
+    res.status(500).json({ error: error.message || "Speech synthesis failed." });
+  }
+});
+
+// 5. Code Execution Simulation — routes through My AI's unified API,
+// same as /api/chat and /api/models (see docs/MYAI_INTEGRATION.md).
+app.post("/api/code/run", async (req: Request, res: Response) => {
+  await codeRunApiHandler(req, res);
+});
+
+// Setup Vite / Static handling
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`My AI Model Server running at http://0.0.0.0:${PORT}`);
+  });
+}
+
+// Export the Express app so Vercel can invoke it as a serverless function.
+export default app;
+
+// Local/Bun/Node development and traditional production server mode.
+// Vercel provides the HTTP listener itself, so never call listen() there.
+if (process.env.VERCEL !== "1") {
+  startServer().catch((error) => {
+    console.error("Failed to start My AI Model server:", error);
+    process.exit(1);
+  });
+}
