@@ -6,11 +6,11 @@
   "framework": "vite",
   "functions": {
     "api/chat.ts": { "maxDuration": 300 },
-    "api/models.ts": { "maxDuration": 60, "includeFiles": "server.cjs" },
+    "api/models.ts": { "maxDuration": 60 },
     "api/health.ts": { "maxDuration": 60 },
-    "api/research.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/research.ts": { "maxDuration": 300 },
     "api/tts.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
-    "api/code/run.ts": { "maxDuration": 300, "includeFiles": "server.cjs" }
+    "api/code/run.ts": { "maxDuration": 300 }
   },
   "headers": [
     {
