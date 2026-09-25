@@ -55,7 +55,19 @@ export default async function handler(req: any, res: any) {
   const profile = resolveMoonexProfile(requested, { messages: [{ role: 'user', content: String(topic) }], enableWebSearch: true });
   const rankedProviders = rankProviderModels(profile, providers);
   if (!rankedProviders.length) { res.status(503).json({ error: `No provider model is available for ${profile.name}.`, code: 'NO_MATCHING_PROVIDER_MODEL', moonexModel: profile.id }); return; }
-  const candidates = rankedProviders.slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, rankedProviders.length));
+  const researchProviderIds = new Set([
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-pro-preview',
+  ]);
+  const currentResearchProviders = rankedProviders.filter((provider: any) =>
+    researchProviderIds.has(String(provider?.id || '').toLowerCase())
+  );
+  const candidates = (currentResearchProviders.length ? currentResearchProviders : rankedProviders)
+    .slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, rankedProviders.length));
 
   const guidance = scopeGuidance(String(searchScope));
   const focusAreasText = Array.isArray(focusAreas) ? focusAreas.join(', ') : String(focusAreas || '');
