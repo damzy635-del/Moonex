@@ -70,3 +70,5 @@ test('Vision routing excludes text-only models', () => {
 });
 
 // CI verification marker: exercise full Moonex CI after research fallback changes.
+
+// CI verification marker: verify OpenAI search fallback routing.
