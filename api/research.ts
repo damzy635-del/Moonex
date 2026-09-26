@@ -71,11 +71,10 @@ export default async function handler(req: any, res: any) {
     researchProviderIds.has(String(provider?.id || '').toLowerCase())
   );
 
-  const candidates = (currentResearchProviders.length ? currentResearchProviders : rankedProviders.filter((provider: any) => provider?.configured !== false))
-    .slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, currentResearchProviders.length ? currentResearchProviders.length : rankedProviders.length));
+  const candidates = currentResearchProviders.slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, currentResearchProviders.length));
 
   if (!candidates.length) {
-    res.status(503).json({ error: 'No configured research provider is available.', code: 'NO_CONFIGURED_RESEARCH_PROVIDER' });
+    res.status(503).json({ error: 'No configured grounded-search provider is available. Configure Google Gemini or OpenAI web search.', code: 'NO_CONFIGURED_RESEARCH_PROVIDER' });
     return;
   }
 
