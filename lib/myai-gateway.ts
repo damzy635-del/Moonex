@@ -125,6 +125,7 @@ export type NonStreamResult = {
   groundingSources?: Array<{ title: string; url: string }>;
   attempts: NonStreamAttempt[];
   errorMessage?: string;
+  statusCode?: number;
 };
 
 // Runs a single-shot (non-streaming) chat completion against My AI,
@@ -176,7 +177,7 @@ export async function completeNonStreaming(opts: {
         const classification = classifyProviderError(upstream.status, message);
         attempts.push({ provider: providerName, model: modelId, status: upstream.status, reason: classification.reason, retryable: classification.retryable, durationMs: Date.now() - started });
         if (classification.retryable && i + 1 < opts.candidates.length) continue;
-        return { ok: false, attempts, errorMessage: message };
+        return { ok: false, attempts, errorMessage: message, statusCode: upstream.status };
       }
 
       const data: any = await upstream.json();
@@ -196,11 +197,11 @@ export async function completeNonStreaming(opts: {
       const classification = timedOut ? { reason: 'TIMEOUT', retryable: true } : classifyProviderError(502, message);
       attempts.push({ provider: providerName, model: modelId, status: timedOut ? 504 : 502, reason: classification.reason, retryable: classification.retryable, durationMs: Date.now() - started });
       if (classification.retryable && i + 1 < opts.candidates.length) continue;
-      return { ok: false, attempts, errorMessage: message };
+      return { ok: false, attempts, errorMessage: message, statusCode: timedOut ? 504 : 502 };
     }
   }
 
-  return { ok: false, attempts, errorMessage: 'No provider attempt was made.' };
+  return { ok: false, attempts, errorMessage: 'No provider attempt was made.', statusCode: 503 };
 }
 
 // Simple in-memory sliding-window rate limiter, matching the one in
