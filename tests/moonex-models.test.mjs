@@ -68,3 +68,5 @@ test('Vision routing excludes text-only models', () => {
   ]);
   assert.deepEqual(ranked.map((model) => model.id), ['gpt-5.6-sol']);
 });
+
+// CI verification marker: exercise full Moonex CI after research fallback changes.
