@@ -81,7 +81,7 @@ const CURATED_CAPABILITIES: Record<string, RegExp[]> = {
   reasoning: [/^gpt-5\.6-/, /^gemini-3\.1-pro-preview$/, /^gemini-3\.8-flash$/, /^gemini-3\.7-flash$/, /^gemini-3\.6-flash$/, /^gemini-3\.5-flash$/, /^mistral-(medium|large)-latest$/, /^openai\/gpt-oss-120b$/],
   tools: [/^gpt-5\.6-/, /^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash)$/, /^mistral-(medium|large)-latest$/, /^codestral-latest$/, /^openai\/gpt-oss-(20b|120b)$/],
   vision: [/^gpt-5\.6-/, /^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-flash-lite|3\.1-pro-preview)$/],
-  search: [/^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-pro-preview)$/],
+  search: [/^gemini-(3\.8-flash|3\.7-flash|3\.6-flash|3\.5-flash|3\.5-flash-lite|3\.1-pro-preview)$/, /^gpt-5-search-api$/],
 };
 
 function supportsCuratedCapability(provider: ProviderModel, capability: string): boolean {
