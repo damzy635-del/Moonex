@@ -70,8 +70,23 @@ export default async function handler(req: any, res: any) {
       }).filter((model) => model.available),
     ];
 
+    const providerHealth: Record<string, any> = {};
+    for (const item of providers) {
+      const providerName = String(item.provider || item.provider_name || item.providerName || '').toLowerCase();
+      if (providerName && item.health && !providerHealth[providerName]) {
+        providerHealth[providerName] = {
+          status: item.health.status || 'unknown',
+          verified: item.health.verified === true,
+          checked_at: item.health.checked_at ?? null,
+          latency_ms: item.health.latency_ms ?? null,
+          reason: item.health.reason || null,
+          retry_after: item.health.retry_after ?? null,
+        };
+      }
+    }
+
     res.setHeader('Cache-Control', 'no-store');
-    res.status(200).json({ models, defaultModel: models[0]?.id || null });
+    res.status(200).json({ models, providerHealth, defaultModel: models[0]?.id || null });
   } catch (error) {
     console.error('Moonex /api/models failed:', error);
     res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
