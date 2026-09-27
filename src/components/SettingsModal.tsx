@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   User,
@@ -22,7 +22,6 @@ import {
 import { UserPreferences, ModelInfo } from '../types';
 import { exportAllData, importAllData } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
-import { ProviderStatus, type ProviderHealth } from './ProviderStatus';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -61,33 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { user, isAnonymous, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'providers' | 'model' | 'voice' | 'data'>('profile');
-  const [providerHealth, setProviderHealth] = useState<Record<string, ProviderHealth>>({});
-  const [providerHealthLoading, setProviderHealthLoading] = useState(false);
-  const [providerHealthError, setProviderHealthError] = useState<string | null>(null);
-  const [prefs, setPrefs] = useState<UserPreferences>({ ...preferences });
-  const [savedSuccess, setSavedSuccess] = useState(false);
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-
   const importFileRef = useRef<HTMLInputElement>(null);
-
-  const loadProviderHealth = async () => {
-    setProviderHealthLoading(true);
-    setProviderHealthError(null);
-    try {
-      const response = await fetch('/api/models', { cache: 'no-store' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-      setProviderHealth(data?.providerHealth && typeof data.providerHealth === 'object' ? data.providerHealth : {});
-    } catch (error) {
-      setProviderHealthError(error instanceof Error ? error.message : 'Unable to load provider health.');
-    } finally {
-      setProviderHealthLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen && activeTab === 'providers') loadProviderHealth();
-  }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
 
@@ -182,18 +155,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('providers')}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                activeTab === 'providers'
-                  ? 'bg-[#262626] text-white shadow-xs'
-                  : 'text-gray-400 hover:bg-[#1f1f1f] hover:text-gray-200'
-              }`}
-            >
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span>Providers</span>
-            </button>
-
-            <button
               onClick={() => setActiveTab('model')}
               className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'model'
@@ -243,7 +204,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <h2 className="text-sm font-bold text-white">
                 {activeTab === 'profile' && 'Profile & Custom Tone'}
                 {activeTab === 'account' && 'Account & Cloud Synchronization'}
-                {activeTab === 'providers' && 'Provider Credential Status'}
                 {activeTab === 'model' && 'Model Defaults & Instructions'}
                 {activeTab === 'voice' && 'Audio & Voice Output'}
                 {activeTab === 'data' && 'Data Storage & Export'}
@@ -407,16 +367,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Tab: Providers */}
-            {activeTab === 'providers' && (
-              <ProviderStatus
-                health={providerHealth}
-                loading={providerHealthLoading}
-                error={providerHealthError}
-                onRefresh={loadProviderHealth}
-              />
             )}
 
             {/* Tab 2: Model & Instructions */}
