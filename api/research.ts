@@ -102,10 +102,17 @@ export default async function handler(req: any, res: any) {
     String(provider?.id || '').toLowerCase() === 'gpt-5-search-api'
   );
 
+  // Reserve one attempt for OpenAI web search whenever it is configured.
+  // Google can have valid credentials but exhausted Gemini quota, so the
+  // fallback must not be pushed out by the provider-attempt cap.
+  const googleBudget = openAIFallback
+    ? Math.max(0, MAX_PROVIDER_ATTEMPTS - 1)
+    : MAX_PROVIDER_ATTEMPTS;
+
   const candidates = [
-    ...googleCandidates,
+    ...googleCandidates.slice(0, googleBudget),
     ...(openAIFallback ? [openAIFallback] : []),
-  ].slice(0, MAX_PROVIDER_ATTEMPTS);
+  ];
 
   if (!candidates.length) {
     res.status(503).json({ error: 'No configured grounded-search provider is available. Configure Google Gemini or OpenAI web search.', code: 'NO_CONFIGURED_RESEARCH_PROVIDER' });
