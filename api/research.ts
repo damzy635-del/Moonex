@@ -71,7 +71,41 @@ export default async function handler(req: any, res: any) {
     researchProviderIds.has(String(provider?.id || '').toLowerCase())
   );
 
-  const candidates = currentResearchProviders.slice(0, Math.min(MAX_PROVIDER_ATTEMPTS, currentResearchProviders.length));
+  // Keep provider fallback explicit: Google can be healthy at credential level
+  // but still quota-limited, so ranking must not be allowed to consume the
+  // entire research candidate budget before OpenAI web search is tried.
+  const hasOpenAI = providers.some((provider: any) =>
+    provider?.configured !== false &&
+    String(provider?.provider || provider?.provider_name || provider?.providerName || provider?.owned_by || '').toLowerCase() === 'openai'
+  );
+  const hasOpenAISearch = currentResearchProviders.some((provider: any) =>
+    String(provider?.id || '').toLowerCase() === 'gpt-5-search-api'
+  );
+
+  if (hasOpenAI && !hasOpenAISearch) {
+    currentResearchProviders.push({
+      id: 'gpt-5-search-api',
+      provider: 'openai',
+      configured: true,
+      capabilities: { search: true },
+    });
+  }
+
+  const uniqueResearchProviders = currentResearchProviders.filter((provider: any, index: number, list: any[]) =>
+    index === list.findIndex((candidate: any) => String(candidate?.id || '').toLowerCase() === String(provider?.id || '').toLowerCase())
+  );
+
+  const googleCandidates = uniqueResearchProviders.filter((provider: any) =>
+    /^(gemini-)/.test(String(provider?.id || '').toLowerCase())
+  );
+  const openAIFallback = uniqueResearchProviders.find((provider: any) =>
+    String(provider?.id || '').toLowerCase() === 'gpt-5-search-api'
+  );
+
+  const candidates = [
+    ...googleCandidates,
+    ...(openAIFallback ? [openAIFallback] : []),
+  ].slice(0, MAX_PROVIDER_ATTEMPTS);
 
   if (!candidates.length) {
     res.status(503).json({ error: 'No configured grounded-search provider is available. Configure Google Gemini or OpenAI web search.', code: 'NO_CONFIGURED_RESEARCH_PROVIDER' });
