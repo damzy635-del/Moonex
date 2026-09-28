@@ -17,7 +17,6 @@ import {
   LogIn,
   LogOut,
   Cloud,
-  CheckCircle2,
 } from 'lucide-react';
 import { UserPreferences, ModelInfo } from '../types';
 import { exportAllData, importAllData } from '../utils/storage';
@@ -59,7 +58,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenAuth,
 }) => {
   const { user, isAnonymous, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'providers' | 'model' | 'voice' | 'data'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'model' | 'voice' | 'data'>('profile');
+  const [prefs, setPrefs] = useState<UserPreferences>({ ...preferences });
+  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
