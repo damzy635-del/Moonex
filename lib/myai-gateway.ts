@@ -50,6 +50,11 @@ export function errorText(value: unknown): string {
 }
 
 export function classifyProviderError(status: number, message: string): { reason: string; retryable: boolean } {
+  // A provider account with zero credits cannot recover by retrying another
+  // model on the same account. Surface it as a terminal provider condition.
+  if (status === 429 && /no credits remaining|add credits|billing/i.test(message)) {
+    return { reason: 'CREDITS_EXHAUSTED', retryable: false };
+  }
   if (status === 401 || status === 403) return { reason: 'AUTHENTICATION_FAILED', retryable: false };
   if (status === 429) return { reason: 'RATE_LIMITED', retryable: true };
   if (status === 408) return { reason: 'TIMEOUT', retryable: true };
