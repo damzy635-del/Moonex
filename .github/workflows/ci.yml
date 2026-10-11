@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-branches: [main, 'fix/**', 'p0-audit-baseline']
+    branches: [main, 'fix/**', 'p0-audit-baseline']
+
   pull_request:
-branches: [main, 'fix/**', 'p0-audit-baseline']
+    branches: [main, 'fix/**', 'p0-audit-baseline']
 
 jobs:
   verify:
