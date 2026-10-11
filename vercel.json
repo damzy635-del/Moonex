@@ -1,0 +1,42 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": {
+    "api/chat.ts": { "maxDuration": 300 },
+    "api/models.ts": { "maxDuration": 60 },
+    "api/health.ts": { "maxDuration": 60 },
+    "api/research.ts": { "maxDuration": 300 },
+    "api/tts.ts": { "maxDuration": 300, "includeFiles": "server.cjs" },
+    "api/code/run.ts": { "maxDuration": 300 }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ],
+  "routes": [
+    { "src": "^/api/chat$", "dest": "/api/chat.ts" },
+    { "src": "^/api/models$", "dest": "/api/models.ts" },
+    { "src": "^/api/health$", "dest": "/api/health.ts" },
+    { "src": "^/api/research$", "dest": "/api/research.ts" },
+    { "src": "^/api/tts$", "dest": "/api/tts.ts" },
+    { "src": "^/api/code/run$", "dest": "/api/code/run.ts" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
