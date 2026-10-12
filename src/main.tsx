@@ -1,16 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
-import { AuthProvider } from './context/AuthContext.tsx';
 import './index.css';
 
-document.title = 'Moonex';
+document.title = 'Moonex — Your space to think';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <App />
   </StrictMode>,
 );
-
