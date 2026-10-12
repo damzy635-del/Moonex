@@ -75,7 +75,7 @@ test('client disconnect aborts an active stream without starting fallback', asyn
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new TextEncoder().encode(
-            'data: {"choices":[{"delta":{"content":"partial response"}}]}\\n\\n',
+            'data: {"choices":[{"delta":{"content":"partial response"}}]}\n\n',
           ));
         },
       });
