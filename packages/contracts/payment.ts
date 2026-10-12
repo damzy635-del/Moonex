@@ -1,0 +1,4 @@
+export interface CheckoutInput{userId:string;planId:string;successUrl:string;cancelUrl:string}
+export interface CheckoutResult{checkoutUrl:string;providerReference:string}
+export interface VerifiedPaymentEvent{eventId:string;eventType:string;userId?:string;subscriptionId?:string;occurredAt:string}
+export interface PaymentProviderAdapter{readonly id:string;createCheckout(input:CheckoutInput):Promise<CheckoutResult>;verifyPayment(reference:string):Promise<boolean>;verifyWebhook(rawBody:Buffer,signature:string|undefined):Promise<VerifiedPaymentEvent>;getSubscription?(reference:string):Promise<unknown>;cancelSubscription?(reference:string):Promise<void>;issueRefund?(reference:string,amountMinor?:number):Promise<void>}
