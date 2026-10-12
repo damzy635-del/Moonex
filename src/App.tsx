@@ -1,238 +1,363 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  ArrowDown, ArrowUp, AudioLines, Check, ChevronDown, CircleHelp, Command, Compass,
+  Copy, Ellipsis, FileText, Globe2, ImagePlus, Layers3, Menu, MessageSquare, Moon,
+  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Search, Send, Settings2,
+  Sparkles, SquarePen, Sun, ThumbsDown, ThumbsUp, X, Zap,
+} from 'lucide-react';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Conversation, Message, Project, UserPreferences, ModelInfo, Artifact, FileAttachment, GroundingSource } from './types';
-import { getSavedConversations, saveConversations, getSavedProjects, saveProjects, getSavedPreferences, INITIAL_CONVERSATION, extractArtifactsFromText } from './utils/storage';
-import { fetchUserConversations, syncConversationToCloud, deleteConversationFromCloud, fetchUserProjects, syncProjectToCloud, deleteProjectFromCloud, fetchUserPreferences, syncPreferencesToCloud } from './utils/cloudSync';
-import { useAuth } from './context/AuthContext';
-import { playPcmAudio, speakTextNative, stopAllSpeech } from './utils/audio';
-import { normalizeMoonexModelId } from '../lib/moonex-models';
-import { STATIC_MOONEX_MODEL_CATALOG, getMoonexDisplayName, mergeAvailableMoonexModels } from './utils/modelPresentation';
-import { prepareMessageEdit, prepareMessageRegeneration } from './utils/conversationActions';
-import { prepareMessageRetry } from './utils/conversationRetry';
-import { createStreamSession } from './utils/streamSession';
-import { canPublishStreamState, stopStream, completeStream } from './utils/streamController';
+type ModelId =
+  | 'moonex-lite-1.5' | 'moonex-fast-1.5' | 'moonex-pro-1.5'
+  | 'moonex-pro-max-1.5' | 'moonex-ultra-1.5' | 'moonex-reasoning-1.5'
+  | 'moonex-code-1.5' | 'moonex-vision-1.5' | 'moonex-research-1.5';
+type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: number };
+type Conversation = { id: string; title: string; messages: ChatMessage[]; updatedAt: number };
 
-import { Header } from './components/Header';
-import { Sidebar } from './components/Sidebar';
-import { MessageItem } from './components/MessageItem';
-import { ChatInput } from './components/ChatInput';
-import { ArtifactPanel } from './components/ArtifactPanel';
-import { WelcomeView } from './components/WelcomeView';
-import { ProjectsModal } from './components/ProjectsModal';
-import { DeepResearchModal } from './components/DeepResearchModal';
-import { SettingsModal } from './components/SettingsModal';
-import { AuthModal } from './components/AuthModal';
-import { CommandPalette } from './components/CommandPalette';
-import { ShortcutsModal } from './components/ShortcutsModal';
-import { PromptLibraryModal } from './components/PromptLibraryModal';
+const MODELS: { id: ModelId; name: string; detail: string; icon: typeof Sparkles }[] = [
+  { id: 'moonex-lite-1.5', name: 'Moonex Lite', detail: 'Everyday questions, quick answers', icon: Sparkles },
+  { id: 'moonex-fast-1.5', name: 'Moonex Fast', detail: 'Speed for everyday work', icon: Zap },
+  { id: 'moonex-pro-1.5', name: 'Moonex Pro', detail: 'A balanced, capable assistant', icon: Layers3 },
+  { id: 'moonex-pro-max-1.5', name: 'Moonex Pro Max', detail: 'More depth for complex tasks', icon: Sparkles },
+  { id: 'moonex-ultra-1.5', name: 'Moonex Ultra', detail: 'Your most capable general model', icon: Sparkles },
+  { id: 'moonex-reasoning-1.5', name: 'Moonex Reasoning', detail: 'Step-by-step problem solving', icon: Compass },
+  { id: 'moonex-code-1.5', name: 'Moonex Code', detail: 'Software engineering and debugging', icon: Command },
+  { id: 'moonex-vision-1.5', name: 'Moonex Vision', detail: 'Work with images and visual input', icon: ImagePlus },
+  { id: 'moonex-research-1.5', name: 'Moonex Research', detail: 'Explore topics in depth', icon: Globe2 },
+];
+
+const STARTERS = [
+  { icon: Compass, title: 'Explore an idea', prompt: 'Help me explore an idea and turn it into a practical plan.' },
+  { icon: FileText, title: 'Write something', prompt: 'Help me write a clear, compelling piece. Ask me what it is for.' },
+  { icon: Command, title: 'Build with code', prompt: 'Help me design and build a reliable software feature.' },
+  { icon: Globe2, title: 'Learn something new', prompt: 'Teach me a useful topic from the ground up with examples.' },
+];
+
+const newConversation = (): Conversation => ({
+  id: crypto.randomUUID(),
+  title: 'New chat',
+  messages: [],
+  updatedAt: Date.now(),
+});
+
+function localReply(prompt: string, model: ModelId): string {
+  const name = MODELS.find((item) => item.id === model)?.name ?? 'Moonex';
+  return `I have your message. The Moonex chat interface is now in its frontend-foundation stage.
+
+**Your request**
+> ${prompt.length > 500 ? `${prompt.slice(0, 500)}…` : prompt}
+
+**What happens next**
+
+- The selected profile is **${name}**.
+- The next integration step connects this conversation to the server-side AI orchestration API.
+- Provider credentials will stay on the server; this interface does not expose or request API secrets.
+
+This response is a local interface preview, not a live model response. The AI backend will be connected in a later implementation step.`;
+}
+
+function formatTime(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(timestamp);
+}
 
 export default function App() {
-  const { user, isAnonymous } = useAuth();
-  const [conversations, setConversations] = useState<Conversation[]>(() => getSavedConversations());
-  const [activeConversationId, setActiveConversationId] = useState<string>(() => getSavedConversations()[0]?.id || INITIAL_CONVERSATION.id);
-  const [projects, setProjects] = useState<Project[]>(() => getSavedProjects());
-  const [preferences, setPreferences] = useState<UserPreferences>(() => getSavedPreferences());
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>(STATIC_MOONEX_MODEL_CATALOG);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
-  const [isArtifactPanelOpen, setIsArtifactPanelOpen] = useState(false);
-  const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
-  const [isProjectsModalOpen, setIsProjectsModalOpen] = useState(false);
-  const [isResearchModalOpen, setIsResearchModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
-  const [activeProjectIdForModal, setActiveProjectIdForModal] = useState<string | undefined>();
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
-  const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(false);
-
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
-  const [streamingGrounding, setStreamingGrounding] = useState<GroundingSource[]>([]);
-  const [streamingModel, setStreamingModel] = useState('');
-  const streamSessionRef = useRef<ReturnType<typeof createStreamSession> | null>(null);
-  const streamSessionIdRef = useRef(0);
-
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const stopAudioCallbackRef = useRef<(() => void) | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const saved = localStorage.getItem('moonex:conversations:v1');
+      return saved ? JSON.parse(saved) as Conversation[] : [newConversation()];
+    } catch {
+      return [newConversation()];
+    }
+  });
+  const [activeId, setActiveId] = useState(() => conversations[0]?.id ?? '');
+  const [model, setModel] = useState<ModelId>('moonex-pro-1.5');
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [composer, setComposer] = useState('');
+  const [sending, setSending] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState('');
+  const [attachmentName, setAttachmentName] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const activeConversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
+  const activeModel = MODELS.find((item) => item.id === model) ?? MODELS[2];
+  const filteredConversations = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return [...conversations]
+      .filter((item) => !q || item.title.toLowerCase().includes(q) || item.messages.some((m) => m.content.toLowerCase().includes(q)))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [conversations, searchQuery]);
+
   useEffect(() => {
-    if (!user || isAnonymous) return;
-    let isMounted = true;
-    async function loadCloudData() {
-      try {
-        const [cloudConvs, cloudProjs, cloudPrefs] = await Promise.all([fetchUserConversations(user.uid), fetchUserProjects(user.uid), fetchUserPreferences(user.uid)]);
-        if (!isMounted) return;
-        if (cloudConvs.length > 0) { setConversations(cloudConvs); setActiveConversationId(cloudConvs[0].id); }
-        else for (const conv of getSavedConversations()) await syncConversationToCloud(user.uid, conv);
-        if (cloudProjs.length > 0) setProjects(cloudProjs);
-        else for (const proj of getSavedProjects()) await syncProjectToCloud(user.uid, proj);
-        if (cloudPrefs) setPreferences(cloudPrefs); else await syncPreferencesToCloud(user.uid, preferences);
-      } catch (err) { console.error('Error synchronizing cloud data:', err); }
+    try { localStorage.setItem('moonex:conversations:v1', JSON.stringify(conversations)); } catch { /* Storage may be unavailable. */ }
+  }, [conversations]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [activeConversation?.messages.length, sending]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen((value) => !value);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        startNewChat();
+      }
+      if (event.key === 'Escape') {
+        setModelMenuOpen(false);
+        setSearchOpen(false);
+        setMobileSidebarOpen(false);
+        setSettingsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  function startNewChat() {
+    const next = newConversation();
+    setConversations((current) => [next, ...current]);
+    setActiveId(next.id);
+    setComposer('');
+    setAttachmentName('');
+    setMobileSidebarOpen(false);
+    window.setTimeout(() => textareaRef.current?.focus(), 50);
+  }
+
+  function updateConversation(id: string, updater: (conversation: Conversation) => Conversation) {
+    setConversations((current) => current.map((conversation) => conversation.id === id ? updater(conversation) : conversation));
+  }
+
+  function sendMessage(event?: FormEvent) {
+    event?.preventDefault();
+    const prompt = composer.trim();
+    if ((!prompt && !attachmentName) || sending || !activeConversation) return;
+    const messageText = attachmentName ? (prompt ? `${prompt}\n\n[Attached file: ${attachmentName}]` : `[Attached file: ${attachmentName}]`) : prompt;
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: messageText, createdAt: Date.now() };
+    const conversationId = activeConversation.id;
+    updateConversation(conversationId, (conversation) => ({
+      ...conversation,
+      title: conversation.messages.length === 0 ? (prompt || attachmentName).slice(0, 44) : conversation.title,
+      messages: [...conversation.messages, userMessage],
+      updatedAt: Date.now(),
+    }));
+    setComposer('');
+    setAttachmentName('');
+    setSending(true);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    window.setTimeout(() => {
+      const reply: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: localReply(messageText, model), createdAt: Date.now() };
+      updateConversation(conversationId, (conversation) => ({ ...conversation, messages: [...conversation.messages, reply], updatedAt: Date.now() }));
+      setSending(false);
+    }, 450);
+  }
+
+  function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      sendMessage();
     }
-    loadCloudData();
-    return () => { isMounted = false; };
-  }, [user, isAnonymous]);
+  }
 
-  useEffect(() => {
-    fetch('/api/models').then((res) => res.json()).then((data) => {
-      if (data.models && Array.isArray(data.models)) setAvailableModels(mergeAvailableMoonexModels(data.models));
-    }).catch((err) => console.warn('Could not fetch models catalog from backend:', err));
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (preferences.theme === 'dark') root.classList.add('dark');
-    else if (preferences.theme === 'light') root.classList.remove('dark');
-    else if (window.matchMedia('(prefers-color-scheme: dark)').matches) root.classList.add('dark');
-    else root.classList.remove('dark');
-  }, [preferences.theme]);
-
-  useEffect(() => {
-    saveConversations(conversations);
-    if (user && !isAnonymous && conversations.length > 0) conversations.forEach((conv) => syncConversationToCloud(user.uid, conv).catch(() => {}));
-  }, [conversations, user, isAnonymous]);
-  useEffect(() => {
-    saveProjects(projects);
-    if (user && !isAnonymous && projects.length > 0) projects.forEach((proj) => syncProjectToCloud(user.uid, proj).catch(() => {}));
-  }, [projects, user, isAnonymous]);
-  useEffect(() => {
-    savePreferences(preferences);
-    if (user && !isAnonymous) syncPreferencesToCloud(user.uid, preferences).catch(() => {});
-  }, [preferences, user, isAnonymous]);
-
-  const currentConversation = conversations.find((c) => c.id === activeConversationId) || conversations[0] || INITIAL_CONVERSATION;
-  const scrollToBottom = (smooth = true) => { if (preferences.autoScroll) messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' }); };
-  useEffect(() => { scrollToBottom(true); }, [currentConversation.messages.length, streamingContent]);
-
-  const handleNewConversation = (projectId?: string) => {
-    const newConv: Conversation = { id: `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`, title: 'New conversation', messages: [], createdAt: Date.now(), updatedAt: Date.now(), projectId, model: normalizeMoonexModelId(preferences.defaultModel), thinkingLevel: preferences.defaultThinkingLevel || 'none', enableWebSearch: preferences.defaultWebSearch || false };
-    setConversations((prev) => [newConv, ...prev]); setActiveConversationId(newConv.id);
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) setIsSidebarOpen(false);
-  };
-  const handleSelectConversation = (id: string) => { setActiveConversationId(id); if (typeof window !== 'undefined' && window.innerWidth < 1024) setIsSidebarOpen(false); };
-  const handleDeleteConversation = (id: string) => {
-    if (user && !isAnonymous) deleteConversationFromCloud(user.uid, id).catch(console.error);
-    const remaining = conversations.filter((c) => c.id !== id);
-    if (remaining.length === 0) { const fresh: Conversation = { id: `conv_${Date.now()}`, title: 'New conversation', messages: [], createdAt: Date.now(), updatedAt: Date.now(), model: normalizeMoonexModelId(preferences.defaultModel), thinkingLevel: preferences.defaultThinkingLevel, enableWebSearch: preferences.defaultWebSearch }; setConversations([fresh]); setActiveConversationId(fresh.id); }
-    else { setConversations(remaining); if (activeConversationId === id) setActiveConversationId(remaining[0].id); }
-  };
-  const handleRenameConversation = (id: string, newTitle: string) => setConversations((prev) => prev.map((c) => c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c));
-  const handleTogglePinConversation = (id: string) => setConversations((prev) => prev.map((c) => c.id === id ? { ...c, isPinned: !c.isPinned } : c));
-  const handleSelectModel = (modelId: string) => { const id = normalizeMoonexModelId(modelId); setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, model: id } : c)); };
-  const handleToggleThinking = () => setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, thinkingLevel: c.thinkingLevel === 'none' ? 'high' : 'none' } : c));
-  const handleToggleSearch = () => setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, enableWebSearch: !c.enableWebSearch } : c));
-  const handleChangeTone = (tone: UserPreferences['tone']) => setPreferences((prev) => ({ ...prev, tone }));
-  const handleClearConversation = () => { if (confirm('Clear all messages in this conversation?')) setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: [], updatedAt: Date.now() } : c)); };
-  const handleExportConversation = () => {
-    const title = currentConversation.title || 'conversation';
-    let md = `# ${title}\n\nDate: ${new Date(currentConversation.createdAt).toLocaleString()}\nModel: ${currentConversation.model}\n\n---\n\n`;
-    currentConversation.messages.forEach((msg) => { md += `${msg.role === 'user' ? '### User' : '### Moonex'} (${new Date(msg.timestamp).toLocaleTimeString()})\n\n${msg.content}\n\n`; if (msg.groundingSources?.length) md += `**Sources:**\n${msg.groundingSources.map((s) => `- [${s.title}](${s.url})`).join('\n')}\n\n`; md += '---\n\n'; });
-    const blob = new Blob([md], { type: 'text/markdown' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  };
-  const handleTogglePinMessage = (messageId: string) => setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, isPinned: !m.isPinned } : m) } : c));
-  const handleBranchConversation = (messageId: string) => {
-    const i = currentConversation.messages.findIndex((m) => m.id === messageId); if (i < 0) return;
-    const branched: Conversation = { id: `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`, title: `Branch: ${currentConversation.title.slice(0, 24)}`, messages: currentConversation.messages.slice(0, i + 1), createdAt: Date.now(), updatedAt: Date.now(), projectId: currentConversation.projectId, model: currentConversation.model, thinkingLevel: currentConversation.thinkingLevel, enableWebSearch: currentConversation.enableWebSearch };
-    setConversations((prev) => [branched, ...prev]); setActiveConversationId(branched.id);
-  };
-
-  const handleSendMessage = async (text: string, files: FileAttachment[] = [], modelOverride?: string, baseMessages?: Message[]) => {
-    if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; }
-    if ((!text.trim() && files.length === 0) || isStreaming) return;
-    const conversationMessages = baseMessages ?? currentConversation.messages;
-    const selectedModelId = normalizeMoonexModelId(modelOverride || currentConversation.model);
-    const userMessage: Message = { id: `msg_user_${Date.now()}`, role: 'user', content: text, timestamp: Date.now(), files: files.length > 0 ? files : undefined };
-    const isFirstUserMessage = conversationMessages.length === 0;
-    const newTitle = isFirstUserMessage ? text.slice(0, 36) || 'New Conversation' : currentConversation.title;
-    const updatedMessages = [...conversationMessages, userMessage];
-    setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, title: newTitle, model: selectedModelId, messages: updatedMessages, updatedAt: Date.now() } : c));
-    const activeProject = currentConversation.projectId ? projects.find((p) => p.id === currentConversation.projectId) : null;
-    const systemInstruction = activeProject ? `${preferences.customSystemInstructions}\n\nProject Instructions:\n${activeProject.customInstructions}` : preferences.customSystemInstructions;
-    const projectKnowledge = activeProject?.knowledgeBase || [];
-    setIsStreaming(true); setStreamingContent(''); setStreamingGrounding([]); setStreamingModel(selectedModelId);
-    const session = createStreamSession(streamSessionIdRef.current); streamSessionIdRef.current = session.id; streamSessionRef.current = session;
-    const sessionId = session.id;
-    const startTime = Date.now(); let effectiveModelUsed = selectedModelId;
+  async function copyMessage(message: ChatMessage) {
     try {
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: updatedMessages, model: selectedModelId, enableWebSearch: currentConversation.enableWebSearch, thinkingLevel: currentConversation.thinkingLevel, systemInstruction, projectKnowledge, tone: preferences.tone }), signal: session.controller.signal });
-      if (!response.ok || !response.body) { let detail = `HTTP ${response.status}`; try { const raw = await response.text(); if (raw) detail += `: ${raw.slice(0, 800)}`; } catch {} throw new Error(`Failed to connect to Moonex stream (${detail}).`); }
-      const reader = response.body.getReader(); const decoder = new TextDecoder(); let sseBuffer = ''; let accumulatedText = ''; let collectedSources: GroundingSource[] = []; let streamError: string | null = null;
-      const canPublish = () => canPublishStreamState(session, streamSessionRef.current?.id ?? -1);
-      const processSSELine = (line: string) => {
-        if (!canPublish()) return;
-        const trimmed = line.trimEnd(); if (!trimmed.startsWith('data:')) return;
-        const payload = trimmed.slice(5).trim(); if (!payload || payload === '[DONE]') return;
-        try {
-          const event = JSON.parse(payload);
-          if (event.type === 'route') { effectiveModelUsed = normalizeMoonexModelId(event.moonexModel, effectiveModelUsed); if (canPublish()) setStreamingModel(effectiveModelUsed); }
-          else if (event.type === 'chunk') { accumulatedText += event.text || ''; if (canPublish()) setStreamingContent(accumulatedText); }
-          else if (event.type === 'done') { accumulatedText = event.fullText || accumulatedText; if (event.modelUsed) effectiveModelUsed = normalizeMoonexModelId(event.modelUsed, effectiveModelUsed); if (event.groundingSources && Array.isArray(event.groundingSources)) collectedSources = event.groundingSources; if (canPublish()) { setStreamingModel(effectiveModelUsed); setStreamingGrounding(collectedSources); } }
-          else if (event.type === 'error') { console.error('Stream returned error:', event.error); streamError = event.error || 'The AI service returned an error. Please try again.'; }
-        } catch (e) { console.warn('Ignoring malformed SSE event:', payload.slice(0, 200), e); }
-      };
-      while (true) { const { value, done } = await reader.read(); if (done) break; sseBuffer += decoder.decode(value, { stream: true }); const lines = sseBuffer.split(/\r?\n/); sseBuffer = lines.pop() || ''; for (const line of lines) processSSELine(line); }
-      sseBuffer += decoder.decode(); if (sseBuffer.trim()) processSSELine(sseBuffer);
-      if (!canPublish()) return;
-      if (streamError && !accumulatedText.trim()) { const errorMessage: Message = { id: `msg_err_${Date.now()}`, role: 'assistant', content: streamError, timestamp: Date.now(), modelUsed: effectiveModelUsed, isError: true }; setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: [...updatedMessages, errorMessage], updatedAt: Date.now() } : c)); return; }
-      const durationMs = Date.now() - startTime; const extractedArtifacts = extractArtifactsFromText(accumulatedText);
-      const assistantMessage: Message = { id: `msg_asst_${Date.now()}`, role: 'assistant', content: accumulatedText || 'I am ready to assist you.', timestamp: Date.now(), thinkingTimeMs: currentConversation.thinkingLevel !== 'none' ? durationMs : undefined, groundingSources: collectedSources.length > 0 ? collectedSources : undefined, artifacts: extractedArtifacts.length > 0 ? extractedArtifacts : undefined, modelUsed: effectiveModelUsed, isError: !!streamError };
-      setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: [...updatedMessages, assistantMessage], updatedAt: Date.now() } : c));
-      if (extractedArtifacts.length > 0 && !isArtifactPanelOpen) { setActiveArtifact(extractedArtifacts[0]); setIsArtifactPanelOpen(true); }
-    } catch (err: any) {
-      if (err.name === 'AbortError') { console.log('Stream generation aborted by user.'); }
-      else if (canPublishStreamState(session, streamSessionRef.current?.id ?? -1)) {
-        console.error('Error generating AI response:', err);
-        const errorContent = err.message?.includes('503') || err.message?.includes('UNAVAILABLE') ? 'The AI model is currently experiencing high demand. Please try again or switch to another model.' : (err.message || 'Please check your connection and try again.');
-        const errorMessage: Message = { id: `msg_err_${Date.now()}`, role: 'assistant', content: errorContent, timestamp: Date.now(), modelUsed: effectiveModelUsed, isError: true };
-        setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: [...updatedMessages, errorMessage] } : c));
-      }
-    } finally {
-      completeStream(session);
-      if (streamSessionRef.current?.id === sessionId) {
-        streamSessionRef.current = null;
-        setIsStreaming(false); setStreamingContent(''); setStreamingGrounding([]);
-      }
-    }
-  };
+      await navigator.clipboard.writeText(message.content);
+      setCopiedId(message.id);
+      window.setTimeout(() => setCopiedId(''), 1600);
+    } catch { setCopiedId(''); }
+  }
 
-  const handleEditMessage = (messageId: string, newContent: string) => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } const mutation = prepareMessageEdit(currentConversation.messages, messageId, newContent.trim()); if (!mutation?.targetMessage) return; setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: mutation.messages } : c)); handleSendMessage(mutation.targetMessage.content, mutation.targetMessage.files || [], undefined, mutation.messages); };
-  const handleStopStreaming = () => { const session = streamSessionRef.current; if (!session) return; stopStream(session); if (streamSessionRef.current?.id === session.id) { streamSessionRef.current = null; setIsStreaming(false); setStreamingContent(''); setStreamingGrounding([]); } };
-  const handleRegenerate = () => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } const mutation = prepareMessageRegeneration(currentConversation.messages); if (!mutation?.targetMessage) return; setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: mutation.messages } : c)); handleSendMessage(mutation.targetMessage.content, mutation.targetMessage.files || [], undefined, mutation.messages); };
-  const handleRetryMessage = (messageId: string) => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } const errorIndex = currentConversation.messages.findIndex((message) => message.id === messageId); if (errorIndex < 0 || !currentConversation.messages[errorIndex].isError) return; const mutation = prepareMessageRetry(currentConversation.messages.slice(0, errorIndex + 1)); if (!mutation) return; setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, messages: mutation.messages } : c)); handleSendMessage(mutation.targetMessage.content, mutation.targetMessage.files || [], undefined, mutation.messages); };
-  const handleSpeakText = async (text: string, playbackRate = 1) => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } stopAllSpeech(); if (stopAudioCallbackRef.current) stopAudioCallbackRef.current(); setIsPlayingAudio(true); try { const res = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, voice: preferences.voiceName || 'Kore' }) }); if (res.ok) { const data = await res.json(); if (data.audioBase64) { await playPcmAudio(data.audioBase64, data.sampleRate || 24000, playbackRate); setIsPlayingAudio(false); return; } } throw new Error('Fallback to Web Speech'); } catch { stopAudioCallbackRef.current = speakTextNative(text, () => setIsPlayingAudio(false), playbackRate); } };
-  const handleStopAudio = () => { stopAllSpeech(); if (stopAudioCallbackRef.current) stopAudioCallbackRef.current(); setIsPlayingAudio(false); };
-  const handleOpenArtifact = (artifact: Artifact) => { setActiveArtifact(artifact); setIsArtifactPanelOpen(true); };
-  const handleToggleTheme = () => setPreferences({ ...preferences, theme: preferences.theme === 'dark' ? 'light' : 'dark' });
-  const isCurrentConversationEmpty = currentConversation.messages.length === 0;
+  function deleteConversation(id: string) {
+    const remaining = conversations.filter((item) => item.id !== id);
+    if (remaining.length === 0) {
+      const next = newConversation();
+      setConversations([next]);
+      setActiveId(next.id);
+    } else {
+      setConversations(remaining);
+      if (activeId === id) setActiveId(remaining[0].id);
+    }
+  }
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#0d0d0d] text-gray-200">
-      <Sidebar isOpen={isSidebarOpen} conversations={conversations} activeConversationId={activeConversationId} projects={projects} preferences={preferences} onSelectConversation={handleSelectConversation} onNewConversation={handleNewConversation} onDeleteConversation={handleDeleteConversation} onRenameConversation={handleRenameConversation} onTogglePinConversation={handleTogglePinConversation} onOpenProjectsModal={() => { setActiveProjectIdForModal(undefined); setIsProjectsModalOpen(true); }} onSelectProject={(projectId) => { setActiveProjectIdForModal(projectId); setIsProjectsModalOpen(true); }} onOpenSettings={() => setIsSettingsModalOpen(true)} onOpenResearch={() => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } setIsResearchModalOpen(true); }} onToggleTheme={handleToggleTheme} onCloseMobileSidebar={() => setIsSidebarOpen(false)} onOpenAuth={(mode) => { setAuthModalMode(mode || 'signin'); setIsAuthModalOpen(true); }} onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)} onOpenShortcuts={() => setIsShortcutsModalOpen(true)} onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} />
-      <div className="flex flex-1 flex-col h-full overflow-hidden bg-[#0d0d0d]">
-        <Header currentConversation={currentConversation} projects={projects} availableModels={availableModels} preferences={preferences} isSidebarOpen={isSidebarOpen} isArtifactPanelOpen={isArtifactPanelOpen} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onToggleArtifactPanel={() => setIsArtifactPanelOpen(!isArtifactPanelOpen)} onSelectModel={handleSelectModel} onToggleThinking={handleToggleThinking} onToggleSearch={handleToggleSearch} onOpenSettings={() => setIsSettingsModalOpen(true)} onOpenResearch={() => { if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); return; } setIsResearchModalOpen(true); }} onClearConversation={handleClearConversation} onExportConversation={handleExportConversation} onOpenProject={(projId) => { setActiveProjectIdForModal(projId); setIsProjectsModalOpen(true); }} onOpenAuth={(mode) => { setAuthModalMode(mode || 'signin'); setIsAuthModalOpen(true); }} onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)} onOpenShortcuts={() => setIsShortcutsModalOpen(true)} />
-        <main id="chat-scroll-container" className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col justify-between">
-          {isCurrentConversationEmpty ? <WelcomeView preferences={preferences} onSelectPrompt={(prompt, model, thinking, search) => { if (model) handleSelectModel(model); if (thinking) setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, thinkingLevel: 'high' } : c)); if (search !== undefined) setConversations((prev) => prev.map((c) => c.id === activeConversationId ? { ...c, enableWebSearch: search } : c)); handleSendMessage(prompt, [], model); }} /> : <div className="flex-1 flex flex-col justify-start">
-            {currentConversation.messages.map((msg) => <MessageItem key={msg.id} message={msg} onRegenerate={handleRegenerate} onRetry={handleRetryMessage} onOpenArtifact={handleOpenArtifact} onSpeak={handleSpeakText} isPlayingAudio={isPlayingAudio} onStopAudio={handleStopAudio} onEditMessage={handleEditMessage} onTogglePinMessage={handleTogglePinMessage} onBranchConversation={handleBranchConversation} />)}
-            {isStreaming && <MessageItem message={{ id: 'streaming_msg', role: 'assistant', content: streamingContent || `Thinking with ${getMoonexDisplayName(streamingModel)}...`, timestamp: Date.now(), modelUsed: streamingModel, groundingSources: streamingGrounding }} isStreaming={true} />}
-            <div ref={messagesEndRef} className="h-4 shrink-0" />
-          </div>}
-        </main>
-        <footer className="shrink-0 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/90 to-transparent pt-2"><ChatInput onSendMessage={handleSendMessage} isStreaming={isStreaming} onStopStreaming={handleStopStreaming} enableThinking={currentConversation.thinkingLevel !== 'none'} onToggleThinking={handleToggleThinking} enableWebSearch={currentConversation.enableWebSearch} onToggleWebSearch={handleToggleSearch} selectedModelName={getMoonexDisplayName(currentConversation.model)} isAuthenticated={!!user && !isAnonymous} onRequireAuth={() => { setAuthModalMode('signin'); setIsAuthModalOpen(true); }} onOpenPromptLibrary={() => setIsPromptLibraryOpen(true)} currentTone={preferences.tone} onChangeTone={handleChangeTone} /></footer>
-      </div>
-      <ArtifactPanel artifact={activeArtifact} isOpen={isArtifactPanelOpen} onClose={() => setIsArtifactPanelOpen(false)} onSendRefactorPrompt={(prompt) => handleSendMessage(prompt, [])} />
-      <CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} conversations={conversations} availableModels={availableModels} projects={projects} currentModel={currentConversation.model} enableThinking={currentConversation.thinkingLevel !== 'none'} enableSearch={currentConversation.enableWebSearch} onSelectConversation={(id) => { handleSelectConversation(id); setIsCommandPaletteOpen(false); }} onSelectModel={(modelId) => { handleSelectModel(modelId); setIsCommandPaletteOpen(false); }} onNewChat={() => { handleNewConversation(); setIsCommandPaletteOpen(false); }} onToggleThinking={handleToggleThinking} onToggleSearch={handleToggleSearch} onOpenSettings={() => { setIsCommandPaletteOpen(false); setIsSettingsModalOpen(true); }} onOpenResearch={() => { setIsCommandPaletteOpen(false); if (!user || isAnonymous) { setAuthModalMode('signin'); setIsAuthModalOpen(true); } else setIsResearchModalOpen(true); }} onOpenProjects={() => { setIsCommandPaletteOpen(false); setIsProjectsModalOpen(true); }} onOpenPromptLibrary={() => { setIsCommandPaletteOpen(false); setIsPromptLibraryOpen(true); }} onOpenShortcuts={() => { setIsCommandPaletteOpen(false); setIsShortcutsModalOpen(true); }} onToggleTheme={handleToggleTheme} onExportChat={handleExportConversation} onClearChat={handleClearConversation} />
-      <ShortcutsModal isOpen={isShortcutsModalOpen} onClose={() => setIsShortcutsModalOpen(false)} />
-      <PromptLibraryModal isOpen={isPromptLibraryOpen} onClose={() => setIsPromptLibraryOpen(false)} onSelectPrompt={(promptText) => { setIsPromptLibraryOpen(false); handleSendMessage(promptText, []); }} />
-      <AuthModal isOpen={isAuthModalOpen} initialMode={authModalMode} onClose={() => setIsAuthModalOpen(false)} />
-      <ProjectsModal isOpen={isProjectsModalOpen} projects={projects} activeProjectId={activeProjectIdForModal} onClose={() => setIsProjectsModalOpen(false)} onSaveProject={(updatedProj) => setProjects((prev) => { const index = prev.findIndex((p) => p.id === updatedProj.id); if (index >= 0) { const copy = [...prev]; copy[index] = updatedProj; return copy; } return [...prev, updatedProj]; })} onDeleteProject={(projId) => { if (user && !isAnonymous) deleteProjectFromCloud(user.uid, projId).catch(console.error); setProjects((prev) => prev.filter((p) => p.id !== projId)); }} onSelectProjectAndChat={(projId) => handleNewConversation(projId)} />
-      <DeepResearchModal isOpen={isResearchModalOpen} onClose={() => setIsResearchModalOpen(false)} onContinueInChat={(reportText) => { handleNewConversation(); handleSendMessage(`Here is my research briefing to analyze:\n\n${reportText}\n\nPlease provide key tactical insights and next steps based on this research.`); }} />
-      <SettingsModal isOpen={isSettingsModalOpen} preferences={preferences} availableModels={availableModels} onClose={() => setIsSettingsModalOpen(false)} onSavePreferences={(newPrefs) => setPreferences({ ...newPrefs, defaultModel: normalizeMoonexModelId(newPrefs.defaultModel) })} onReloadData={() => { setConversations(getSavedConversations()); setProjects(getSavedProjects()); setPreferences(getSavedPreferences()); }} onOpenAuth={(mode) => { setAuthModalMode(mode || 'signin'); setIsAuthModalOpen(true); }} />
+    <div className={`moonex-app ${darkMode ? 'theme-dark' : 'theme-light'}`}>
+      {mobileSidebarOpen && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} />}
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-expanded' : 'sidebar-collapsed'} ${mobileSidebarOpen ? 'sidebar-mobile-open' : ''}`}>
+        <div className="sidebar-top">
+          <button className="brand-mark" aria-label="Moonex home" onClick={startNewChat}>
+            <span className="brand-symbol"><Sparkles size={20} strokeWidth={2.1} /></span>
+            {sidebarOpen && <span className="brand-word">moonex<span className="brand-dot">.</span></span>}
+          </button>
+          <button className="icon-button sidebar-collapse" aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} onClick={() => setSidebarOpen((value) => !value)}>
+            {sidebarOpen ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+          </button>
+        </div>
+
+        <div className="sidebar-actions">
+          <button className="sidebar-action primary-action" onClick={startNewChat} title="New chat">
+            <SquarePen size={18} />{sidebarOpen && <><span>New chat</span><kbd>⌘ K</kbd></>}
+          </button>
+          <button className="sidebar-action" onClick={() => { setSearchOpen(true); setMobileSidebarOpen(false); }} title="Search chats">
+            <Search size={18} />{sidebarOpen && <><span>Search chats</span><kbd>⌘ K</kbd></>}
+          </button>
+          <button className="sidebar-action" onClick={() => { setSettingsOpen(true); setMobileSidebarOpen(false); }} title="Settings">
+            <Settings2 size={18} />{sidebarOpen && <span>Settings</span>}
+          </button>
+        </div>
+
+        {sidebarOpen && (
+          <div className="history-area">
+            <div className="history-heading"><span>YOUR CHATS</span><button className="tiny-icon" aria-label="New chat" onClick={startNewChat}><Plus size={15} /></button></div>
+            <div className="conversation-list">
+              {filteredConversations.length === 0 ? <p className="empty-history">No matching conversations</p> : filteredConversations.map((conversation) => (
+                <div className={`history-item ${conversation.id === activeId ? 'history-item-active' : ''}`} key={conversation.id}>
+                  <button className="history-select" onClick={() => { setActiveId(conversation.id); setMobileSidebarOpen(false); }}>
+                    <MessageSquare size={16} /><span>{conversation.title}</span>
+                  </button>
+                  <button className="history-delete" title="Delete conversation" aria-label={`Delete ${conversation.title}`} onClick={() => deleteConversation(conversation.id)}><MoreHorizontal size={17} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="sidebar-spacer" />
+            <div className="sidebar-promo">
+              <div className="promo-icon"><Sparkles size={17} /></div>
+              <div><strong>More room to think.</strong><p>Explore the Moonex experience.</p></div>
+              <button aria-label="Learn more" onClick={() => setSettingsOpen(true)}><ArrowUp size={16} /></button>
+            </div>
+          </div>
+        )}
+        {!sidebarOpen && <div className="collapsed-spacer" />}
+        <button className="profile-button" onClick={() => setSettingsOpen(true)} title="Account and settings">
+          <span className="avatar">M</span>
+          {sidebarOpen && <><span className="profile-copy"><strong>Moonex</strong><small>Personal workspace</small></span><Ellipsis size={18} className="profile-more" /></>}
+        </button>
+      </aside>
+
+      <main className="main-panel">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button className="icon-button mobile-menu-button" aria-label="Open navigation" onClick={() => setMobileSidebarOpen(true)}><Menu size={20} /></button>
+            <div className="model-picker-wrap">
+              <button className={`model-picker ${modelMenuOpen ? 'model-picker-open' : ''}`} onClick={() => setModelMenuOpen((value) => !value)} aria-expanded={modelMenuOpen}>
+                <span className="model-picker-name">{activeModel.name}</span><span className="model-version">1.5</span><ChevronDown size={15} />
+              </button>
+              {modelMenuOpen && <>
+                <button className="popover-dismiss" aria-label="Close model menu" onClick={() => setModelMenuOpen(false)} />
+                <div className="model-menu">
+                  <div className="model-menu-heading"><span>Choose a model</span><span className="model-count">9 profiles</span></div>
+                  {MODELS.map((item) => {
+                    const Icon = item.icon;
+                    return <button className={`model-option ${model === item.id ? 'model-option-active' : ''}`} key={item.id} onClick={() => { setModel(item.id); setModelMenuOpen(false); }}>
+                      <span className="model-option-icon"><Icon size={17} /></span><span className="model-option-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>{model === item.id && <Check size={17} className="model-check" />}
+                    </button>;
+                  })}
+                  <div className="model-menu-foot">Model availability depends on your workspace configuration.</div>
+                </div>
+              </>}
+            </div>
+          </div>
+          <div className="topbar-right">
+            <span className="beta-label"><span /> Preview</span>
+            <button className="icon-button theme-toggle" aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setDarkMode((value) => !value)}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            <button className="share-button" onClick={() => setSettingsOpen(true)}><Sparkles size={15} /> <span>Explore Moonex</span></button>
+          </div>
+        </header>
+
+        <section className="chat-scroll-area" aria-label="Conversation">
+          {!activeConversation?.messages.length ? (
+            <div className="welcome-layout">
+              <div className="welcome-orb"><div className="orb-ring orb-ring-one" /><div className="orb-ring orb-ring-two" /><div className="orb-core"><Sparkles size={30} strokeWidth={1.5} /></div><span className="orb-star orb-star-one">✳</span><span className="orb-star orb-star-two">✦</span></div>
+              <div className="welcome-eyebrow"><span className="eyebrow-line" /> YOUR SPACE TO THINK <span className="eyebrow-line" /></div>
+              <h1>Good to see you.<br /><span>What’s on your mind?</span></h1>
+              <p className="welcome-description">A little clarity can change everything.<br className="desktop-break" /> Start with a question, an idea, or a challenge.</p>
+              <div className="starter-grid">
+                {STARTERS.map(({ icon: Icon, title, prompt }) => <button className="starter-card" key={title} onClick={() => { setComposer(prompt); textareaRef.current?.focus(); }}>
+                  <span className="starter-icon"><Icon size={18} /></span><span className="starter-title">{title}</span><span className="starter-arrow"><ArrowDown size={15} /></span>
+                </button>)}
+              </div>
+              <div className="welcome-footnote"><span className="footnote-spark"><Sparkles size={13} /></span> Thoughtful tools for the way you think.</div>
+            </div>
+          ) : (
+            <div className="messages-wrap">
+              <div className="conversation-context"><span className="context-dot" /> CONVERSATION <span className="context-separator">/</span> {activeModel.name.toUpperCase()}</div>
+              {activeConversation.messages.map((message) => (
+                <article className={`message-row message-${message.role}`} key={message.id}>
+                  {message.role === 'assistant' && <div className="assistant-avatar"><Sparkles size={17} /></div>}
+                  <div className="message-main">
+                    {message.role === 'user' && <div className="message-role">You <span>{formatTime(message.createdAt)}</span></div>}
+                    <div className={`message-content ${message.role === 'user' ? 'user-message-content' : 'assistant-message-content'}`}>
+                      {message.role === 'assistant' ? <div className="markdown-preview">{message.content.split('\n').map((line, index) => {
+                        if (line.startsWith('**') && line.endsWith('**')) return <h3 key={index}>{line.slice(2, -2)}</h3>;
+                        if (line.startsWith('> ')) return <blockquote key={index}>{line.slice(2)}</blockquote>;
+                        if (line.startsWith('- ')) return <p className="response-bullet" key={index}><span>•</span>{line.slice(2)}</p>;
+                        return line ? <p key={index}>{line.replace(/\*\*(.*?)\*\*/g, '$1')}</p> : <div className="response-gap" key={index} />;
+                      })}</div> : message.content}
+                    </div>
+                    {message.role === 'assistant' && <div className="message-tools">
+                      <button className="tool-button" onClick={() => copyMessage(message)} title="Copy response">{copiedId === message.id ? <Check size={15} /> : <Copy size={15} />}{copiedId === message.id && <span>Copied</span>}</button>
+                      <button className="tool-button" title="Good response" onClick={(event) => { event.currentTarget.classList.toggle('tool-button-selected'); }}><ThumbsUp size={15} /></button>
+                      <button className="tool-button" title="Needs improvement" onClick={(event) => { event.currentTarget.classList.toggle('tool-button-selected'); }}><ThumbsDown size={15} /></button>
+                    </div>}
+                  </div>
+                </article>
+              ))}
+              {sending && <div className="typing-row"><div className="assistant-avatar"><Sparkles size={17} /></div><div className="typing-indicator"><span /><span /><span /></div></div>}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </section>
+
+        <div className="composer-dock">
+          <form className="composer-shell" id="chat-input-box" onSubmit={sendMessage}>
+            {attachmentName && <div className="attachment-chip"><FileText size={14} /><span>{attachmentName}</span><button type="button" aria-label="Remove attachment" onClick={() => setAttachmentName('')}><X size={13} /></button></div>}
+            <textarea ref={textareaRef} id="chat-textarea" rows={1} value={composer} onChange={(event) => { setComposer(event.target.value); event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 180)}px`; }} onKeyDown={onComposerKeyDown} placeholder="Message Moonex..." aria-label="Message Moonex" />
+            <div className="composer-controls">
+              <div className="composer-tools">
+                <input ref={fileRef} type="file" className="visually-hidden" onChange={(event) => setAttachmentName(event.target.files?.[0]?.name ?? '')} />
+                <button type="button" className="composer-tool-button" title="Attach a file" onClick={() => fileRef.current?.click()}><Paperclip size={17} /><span className="tool-label">Attach</span></button>
+                <span className="composer-divider" />
+                <button type="button" className="composer-model-tag" onClick={() => setModelMenuOpen(true)}><Sparkles size={14} /><span>{activeModel.name}</span><ChevronDown size={13} /></button>
+              </div>
+              <div className="composer-submit-group">
+                <span className="enter-hint">↵ <span>to send</span></span>
+                <button type="submit" className="send-button" disabled={sending || (!composer.trim() && !attachmentName)} aria-label="Send message">{sending ? <AudioLines size={17} /> : <Send size={16} />}</button>
+              </div>
+            </div>
+          </form>
+          <p className="composer-disclaimer">Moonex can make mistakes. Check important information. <button onClick={() => setSettingsOpen(true)}>Learn more</button></p>
+        </div>
+      </main>
+
+      {searchOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>
+        <section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search conversations">
+          <div className="search-dialog-input"><Search size={19} /><input autoFocus placeholder="Search your conversations..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /><kbd>ESC</kbd><button className="tiny-icon" onClick={() => setSearchOpen(false)} aria-label="Close search"><X size={17} /></button></div>
+          <div className="search-results-label">CONVERSATIONS</div>
+          <div className="search-results">{filteredConversations.map((conversation) => <button key={conversation.id} onClick={() => { setActiveId(conversation.id); setSearchOpen(false); setSearchQuery(''); }}><MessageSquare size={17} /><span>{conversation.title}</span><span className="search-result-count">{conversation.messages.length} messages</span></button>)}
+            {filteredConversations.length === 0 && <div className="search-empty">No conversations found. Try another search.</div>}
+          </div>
+          <div className="search-dialog-footer"><span><kbd>↵</kbd> Open conversation</span><span><kbd>ESC</kbd> Close</span></div>
+        </section>
+      </div>}
+
+      {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+        <section className="settings-dialog" role="dialog" aria-modal="true" aria-label="Moonex settings">
+          <div className="settings-header"><div><span className="settings-kicker">WORKSPACE</span><h2>Settings &amp; preferences</h2></div><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={19} /></button></div>
+          <div className="settings-profile"><span className="avatar avatar-large">M</span><div><strong>Moonex workspace</strong><p>Frontend preview · account integration pending</p></div></div>
+          <div className="settings-section"><span className="settings-section-label">APPEARANCE</span><button className="settings-row" onClick={() => setDarkMode((value) => !value)}><span className="settings-row-icon">{darkMode ? <Moon size={18} /> : <Sun size={18} />}</span><span><strong>Theme</strong><small>{darkMode ? 'Dark mode' : 'Light mode'}</small></span><span className="settings-row-end">{darkMode ? 'Switch to light' : 'Switch to dark'} <ChevronDown size={14} /></span></button></div>
+          <div className="settings-section"><span className="settings-section-label">AI MODELS</span><div className="settings-row"><span className="settings-row-icon"><Sparkles size={18} /></span><span><strong>Current model</strong><small>{activeModel.name}</small></span><span className="settings-row-end">{MODELS.length} profiles</span></div><div className="settings-note">Provider routing and live AI responses will be enabled when the server API is connected. API keys will never be stored in this browser interface.</div></div>
+          <div className="settings-section"><span className="settings-section-label">SUPPORT</span><button className="settings-row" onClick={() => setSettingsOpen(false)}><span className="settings-row-icon"><CircleHelp size={18} /></span><span><strong>About this preview</strong><small>Moonex interface foundation</small></span><span className="settings-row-end">v0.1</span></button></div>
+          <div className="settings-footer"><span className="settings-status-dot" /> Secure-by-design architecture planned <span className="settings-footer-brand">MOONEX</span></div>
+        </section>
+      </div>}
     </div>
   );
 }
