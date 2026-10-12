@@ -415,7 +415,9 @@ export default async function handler(req: any, res: any) {
             result = await Promise.race([
               reader.read(),
               new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
-                readController.signal.addEventListener('abort', () => reject(readController.signal.reason || new DOMException('Upstream stream timed out.', 'TimeoutError')), { once: true });
+                const rejectOnAbort = () => reject(readController.signal.reason || new DOMException('Upstream stream timed out.', 'TimeoutError'));
+                if (readController.signal.aborted) rejectOnAbort();
+                else readController.signal.addEventListener('abort', rejectOnAbort, { once: true });
               }),
             ]);
           } catch (error) {
