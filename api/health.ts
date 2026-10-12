@@ -14,7 +14,7 @@ async function fetchCatalog(base: string, token: string) {
   const latencyMs = Date.now() - started;
   if (!response.ok) throw new Error(`Model catalog returned HTTP ${response.status}.`);
   const json: any = await response.json();
-  const list = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? Object.values(json.models) : [];
+  const list = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : json?.models && typeof json.models === 'object' ? Object.values(json.models) : [];
   return { latencyMs, models: list.filter((item: any) => item && item.id).map((item: any) => ({ ...item, id: String(item.id) })) };
 }
 export default async function handler(req: any, res: any) {
