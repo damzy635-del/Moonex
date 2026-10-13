@@ -17,7 +17,7 @@ const starters = [
   ["↗", "Build a project", "Help me plan and build a software project step by step."],
 ];
 
-const previewReply = "Your message is saved. Live AI responses are not connected yet; the next milestone is the server-side provider router.";
+const previewReply = "This message is stored locally for preview. Sign in and configure the AI provider to get a live response.";
 
 export default function App() {
   const { t } = useTranslation();
@@ -41,6 +41,7 @@ export default function App() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dataError, setDataError] = useState("");
+  const [sending, setSending] = useState(false);
 
   const loadChats = useCallback(async (userId: string) => {
     if (!supabase) return;
@@ -131,14 +132,16 @@ export default function App() {
 
   async function sendMessage(value = draft) {
     const content = value.trim();
-    if (!content) return;
+    if (!content || sending) return;
     setDataError("");
+    setSending(true);
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content };
-    const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: previewReply };
+    const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
     let persisted = Boolean(user && supabase && active?.persisted);
-    if (user && supabase) {
-      try {
+
+    try {
+      if (user && supabase) {
         if (!persisted) {
           const { data, error } = await supabase.from("conversations").insert({
             user_id: user.id, title: content.slice(0, 48) || "New chat", model_profile: model,
@@ -152,25 +155,97 @@ export default function App() {
           }).eq("id", conversationId).eq("user_id", user.id);
           if (error) throw error;
         }
-        const { error: insertError } = await supabase.from("messages").insert([
-          { conversation_id: conversationId, user_id: user.id, role: "user", content },
-          { conversation_id: conversationId, user_id: user.id, role: "assistant", content: previewReply },
-        ]);
+        const { error: insertError } = await supabase.from("messages").insert({
+          conversation_id: conversationId, user_id: user.id, role: "user", content,
+        });
         if (insertError) throw insertError;
         persisted = true;
-      } catch (error) {
-        setDataError(error instanceof Error ? error.message : "Could not save this conversation.");
-        return;
       }
+
+      setChats((current) => {
+        const old = current.find((chat) => chat.id === conversationId);
+        const next: Chat = old
+          ? { ...old, title: old.messages.length ? old.title : content.slice(0, 48), messages: [...old.messages, userMessage, assistantMessage], updated: Date.now(), model, persisted }
+          : { id: conversationId, title: content.slice(0, 48), messages: [userMessage, assistantMessage], updated: Date.now(), model, persisted };
+        return [next, ...current.filter((chat) => chat.id !== conversationId)];
+      });
+      setActiveId(conversationId); setDraft(""); setMobileNav(false);
+
+      if (!user || !supabase) return;
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("Your session expired. Sign in again to continue.");
+
+      const context: Message[] = (active?.messages ?? [])
+        .filter((message) => message.content !== previewReply && message.content !== "Thinking…")
+        .map((message) => ({ role: message.role, content: message.content }));
+      context.push(userMessage);
+
+      const apiResponse = await fetch("/api/v1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ modelProfile: model, messages: context }),
+      });
+      if (!apiResponse.ok) {
+        const body = await apiResponse.json().catch(() => null) as { error?: { message?: string } } | null;
+        throw new Error(body?.error?.message ?? `Chat request failed (${apiResponse.status}).`);
+      }
+      if (!apiResponse.body) throw new Error("Streaming is not supported by this response.");
+
+      const reader = apiResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let assistantText = "";
+      const updateAssistant = (text: string) => setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+        ...chat,
+        messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, content: text } : message),
+      }));
+
+      try {
+        while (true) {
+          const { value: chunk, done } = await reader.read();
+          buffer += decoder.decode(chunk, { stream: !done });
+          const frames = buffer.split(/\r?\n\r?\n/);
+          buffer = frames.pop() ?? "";
+          for (const frame of frames) {
+            const eventName = frame.split(/\r?\n/).find((line) => line.startsWith("event:"))?.slice(6).trim();
+            const dataLine = frame.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+            if (!dataLine) continue;
+            const payload = JSON.parse(dataLine) as { text?: string; message?: string };
+            if (eventName === "delta" && typeof payload.text === "string") {
+              assistantText += payload.text;
+              updateAssistant(assistantText);
+            } else if (eventName === "error") {
+              throw new Error(payload.message ?? "The AI provider failed.");
+            }
+          }
+          if (done) break;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
+      const { data: savedAssistant, error: saveAssistantError } = await supabase.from("messages").insert({
+        conversation_id: conversationId, user_id: user.id, role: "assistant", content: assistantText,
+      }).select("id").single();
+      if (saveAssistantError) throw saveAssistantError;
+      setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+        ...chat,
+        messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not send this message.";
+      setDataError(message);
+      setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+        ...chat,
+        messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: `Moonex couldn't complete this response: ${message}` } : item),
+      }));
+    } finally {
+      setSending(false);
     }
-    setChats((current) => {
-      const old = current.find((chat) => chat.id === conversationId);
-      const next: Chat = old
-        ? { ...old, title: old.messages.length ? old.title : content.slice(0, 48), messages: [...old.messages, userMessage, assistantMessage], updated: Date.now(), model, persisted }
-        : { id: conversationId, title: content.slice(0, 48), messages: [userMessage, assistantMessage], updated: Date.now(), model, persisted };
-      return [next, ...current.filter((chat) => chat.id !== conversationId)];
-    });
-    setActiveId(conversationId); setDraft(""); setMobileNav(false);
   }
 
   const sidebar = <aside className="sidebar">
@@ -201,7 +276,7 @@ export default function App() {
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}
-      <footer className="composer-area"><div className="composer"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} /><div className="composer-tools"><div className="composer-hint">＋ <span>Ask, create, explore</span></div><div className="composer-actions"><span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span><button className="send-button" disabled={!draft.trim()} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button></div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} Live AI responses are not connected yet.</p></footer>
+      <footer className="composer-area"><div className="composer"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} /><div className="composer-tools"><div className="composer-hint">＋ <span>Ask, create, explore</span></div><div className="composer-actions"><span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span><button className="send-button" disabled={!draft.trim() || sending} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button></div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-dialog" onClick={(event) => event.stopPropagation()}><header><div><h2>Account & settings</h2><p>{user?.email ?? "Workspace preferences"}</p></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Close settings"><X size={18} /></button></header>
       <div className="settings-row"><div><strong>Appearance</strong><small>Choose your workspace theme</small></div><div className="theme-switch"><button className={!dark ? "chosen" : ""} onClick={() => setDark(false)}><Sun size={15} /> Light</button><button className={dark ? "chosen" : ""} onClick={() => setDark(true)}><Moon size={15} /> Dark</button></div></div>
