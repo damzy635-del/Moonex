@@ -208,7 +208,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       };
       const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
       if (text && !clientAbort.signal.aborted && !response.destroyed) {
-        response.write(\`event: delta\\ndata: \${JSON.stringify({ text })}\\n\\n\`);
+        response.write("event: delta\ndata: " + JSON.stringify({ text }) + "\n\n");
       }
     } catch {
       // Ignore malformed provider chunks; never forward raw provider payloads to clients.
@@ -223,19 +223,19 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\\n");
+      const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) processLine(line);
     }
     buffer += decoder.decode();
     if (buffer.trim()) processLine(buffer);
     if (!clientAbort.signal.aborted && !response.destroyed) {
-      response.write("event: done\\ndata: {}\\n\\n");
+      response.write("event: done\ndata: {}\n\n");
       response.end();
     }
   } catch {
     if (!clientAbort.signal.aborted && !response.destroyed) {
-      response.write(\`event: error\\ndata: \${JSON.stringify({ message: "The AI response stream was interrupted. Please try again." })}\\n\\n\`);
+      response.write("event: error\ndata: " + JSON.stringify({ message: "The AI response stream was interrupted. Please try again." }) + "\n\n");
       response.end();
     }
   } finally {
