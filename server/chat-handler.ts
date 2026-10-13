@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createChatRateLimiter, RateLimitUnavailableError } from "./rate-limit";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ApiRequest = {
@@ -80,6 +81,29 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   if (authError || !authData.user) {
     sendError(response, 401, "INVALID_SESSION", "Your session is invalid or expired. Sign in again.");
     return;
+  }
+
+  // Shared rate limiting is mandatory in production. Never silently fall back to
+  // process-local state, which can be bypassed across serverless instances.
+  const rateLimiter = createChatRateLimiter();
+  if (!rateLimiter && process.env.NODE_ENV === "production") {
+    sendError(response, 503, "RATE_LIMITER_NOT_CONFIGURED", "Chat is temporarily unavailable because abuse protection is not configured.");
+    return;
+  }
+  if (rateLimiter) {
+    try {
+      const decision = await rateLimiter.consume(authData.user.id);
+      response.setHeader("X-RateLimit-Limit", "10");
+      response.setHeader("X-RateLimit-Remaining", String(decision.remaining));
+      if (!decision.allowed) {
+        response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+        sendError(response, 429, "CHAT_RATE_LIMITED", "Too many chat requests. Please wait before trying again.");
+        return;
+      }
+    } catch {
+      sendError(response, 503, "RATE_LIMITER_UNAVAILABLE", "Chat is temporarily unavailable because abuse protection could not be verified.");
+      return;
+    }
   }
 
   const body = request.body as { modelProfile?: unknown; messages?: unknown } | null;
