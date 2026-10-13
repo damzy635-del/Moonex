@@ -21,7 +21,7 @@ const starters = [
 const previewReply = "This message is stored locally for preview. Sign in and configure the AI provider to get a live response.";
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  const pattern = /(`{3}[\s\S]*?`{3}|`[^\n`]+`|\\*\\*[^*]+\\*\\*|__[^_]+__|\\*[^*]+\\*|_[^_]+_|~~[^~]+~~)/g;
+  const pattern = /(`{3}[\s\S]*?`{3}|`[^\n`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
