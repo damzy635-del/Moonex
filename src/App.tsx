@@ -68,6 +68,15 @@ export default function App() {
       messages: byConversation.get(row.id) ?? [], persisted: true,
     }));
     setChats((current) => [...loaded, ...current.filter((chat) => !chat.persisted)]);
+    // Restore the last selected conversation for this account after refresh/sign-in.
+    const savedActiveId = window.localStorage.getItem(`moonex-active-chat:${userId}`);
+    if (savedActiveId === "__new__") {
+      setActiveId(null);
+    } else if (savedActiveId && loaded.some((chat) => chat.id === savedActiveId)) {
+      setActiveId((current) => current && loaded.some((chat) => chat.id === current) ? current : savedActiveId);
+    } else if (loaded.length) {
+      setActiveId((current) => current && loaded.some((chat) => chat.id === current) ? current : null);
+    }
     setDataError("");
   }, []);
 
@@ -95,6 +104,9 @@ export default function App() {
   }, [loadChats]);
 
   const active = chats.find((chat) => chat.id === activeId);
+  useEffect(() => {
+    if (user && activeId) window.localStorage.setItem(`moonex-active-chat:${user.id}`, activeId);
+  }, [activeId, user]);
   const filtered = useMemo(() => chats.filter((chat) => chat.title.toLowerCase().includes(query.toLowerCase())), [chats, query]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -250,7 +262,7 @@ export default function App() {
 
   const sidebar = <aside className="sidebar">
     <div className="brand-row"><div className="brand-mark"><Sparkles size={18} /></div><span className="brand-name">moonex</span><button className="icon-button sidebar-collapse" onClick={() => setSidebarOpen(false)} aria-label="Collapse sidebar"><PanelLeftClose size={17} /></button></div>
-    <button className="new-chat" onClick={() => { setActiveId(null); setDraft(""); setMobileNav(false); }}><MessageSquarePlus size={17} /><span>{t("newChat")}</span><span className="shortcut">⌘ K</span></button>
+    <button className="new-chat" onClick={() => { setActiveId(null); if (user) window.localStorage.setItem(`moonex-active-chat:${user.id}`, "__new__"); setDraft(""); setMobileNav(false); }}><MessageSquarePlus size={17} /><span>{t("newChat")}</span><span className="shortcut">⌘ K</span></button>
     <label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} /></label>
     <div className="section-label">{t("recent")}</div>
     <nav className="chat-list">{filtered.map((chat) => <button key={chat.id} className={chat.id === activeId ? "chat-link active" : "chat-link"} onClick={() => { setActiveId(chat.id); setMobileNav(false); }}>{chat.title}</button>)}</nav>
