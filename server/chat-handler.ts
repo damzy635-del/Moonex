@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createChatRateLimiter, RateLimitUnavailableError } from "./rate-limit";
+import { createChatRateLimiter, RateLimitUnavailableError } from "./rate-limit.js";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ApiRequest = {
