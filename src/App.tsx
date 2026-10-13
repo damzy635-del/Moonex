@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUp, Check, ChevronDown, LogIn, LogOut, Menu, MessageSquarePlus, Moon, PanelLeftClose, Search, Settings2, Sparkles, Sun, UserRound, X } from "lucide-react";
@@ -19,9 +20,9 @@ const starters = [
 
 const previewReply = "This message is stored locally for preview. Sign in and configure the AI provider to get a live response.";
 
-function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
-  const pattern = /(`{3}[\\s\\S]*?`{3}|`[^\\n`]+`|\\*\\*[^*]+\\*\\*|__[^_]+__|\\*[^*]+\\*|_[^_]+_|~~[^~]+~~)/g;
-  const nodes: React.ReactNode[] = [];
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const pattern = /(`{3}[\s\S]*?`{3}|`[^\n`]+`|\\*\\*[^*]+\\*\\*|__[^_]+__|\\*[^*]+\\*|_[^_]+_|~~[^~]+~~)/g;
+  const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   let index = 0;
@@ -29,7 +30,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
     const token = match[0];
     if (token.startsWith("```")) {
-      const body = token.slice(3, -3).replace(/^[a-zA-Z0-9_-]+\\n/, "");
+      const body = token.slice(3, -3).replace(/^[a-zA-Z0-9_-]+\n/, "");
       nodes.push(<code key={`${keyPrefix}-${index++}`}>{body}</code>);
     } else if (token.startsWith("`")) {
       nodes.push(<code key={`${keyPrefix}-${index++}`}>{token.slice(1, -1)}</code>);
@@ -47,15 +48,15 @@ function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[
 }
 
 function MarkdownMessage({ content }: { content: string }) {
-  const lines = content.replace(/\\r\\n?/g, "\\n").split("\\n");
-  const blocks: React.ReactNode[] = [];
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const blocks: ReactNode[] = [];
   let paragraph: string[] = [];
   let list: { text: string; ordered: boolean }[] = [];
   let code: string[] = [];
   let inCode = false;
   const flushParagraph = () => {
     if (paragraph.length) {
-      blocks.push(<p key={`p-${blocks.length}`}>{paragraph.map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{renderInlineMarkdown(line, `p-${blocks.length}-${i}`)}</React.Fragment>)}</p>);
+      blocks.push(<p key={`p-${blocks.length}`}>{paragraph.map((line, i) => <Fragment key={i}>{i > 0 && <br />}{renderInlineMarkdown(line, `p-${blocks.length}-${i}`)}</Fragment>)}</p>);
       paragraph = [];
     }
   };
@@ -70,7 +71,7 @@ function MarkdownMessage({ content }: { content: string }) {
     }
   };
   const flushCode = () => {
-    blocks.push(<pre key={`code-${blocks.length}`}><code>{code.join("\\n")}</code></pre>);
+    blocks.push(<pre key={`code-${blocks.length}`}><code>{code.join("\n")}</code></pre>);
     code = [];
   };
   lines.forEach((line) => {
@@ -81,8 +82,8 @@ function MarkdownMessage({ content }: { content: string }) {
     }
     if (inCode) { code.push(line); return; }
     if (!line.trim()) { flushParagraph(); flushList(); return; }
-    if (/^\\s*([-*_])(?:\\s*\\1){2,}\\s*$/.test(line)) { flushParagraph(); flushList(); blocks.push(<hr key={`hr-${blocks.length}`} />); return; }
-    const heading = line.match(/^\\s{0,3}(#{1,6})\\s+(.+?)\\s*#*\\s*$/);
+    if (/^\s*([-*_])(?:\s*\\1){2,}\s*$/.test(line)) { flushParagraph(); flushList(); blocks.push(<hr key={`hr-${blocks.length}`} />); return; }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
     if (heading) {
       flushParagraph(); flushList();
       const level = heading[1].length;
@@ -95,8 +96,8 @@ function MarkdownMessage({ content }: { content: string }) {
       else blocks.push(<h6 key={blocks.length}>{children}</h6>);
       return;
     }
-    const bullet = line.match(/^\\s*[-*+]\\s+(.+)$/);
-    const numbered = line.match(/^\\s*\\d+[.)]\\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
+    const numbered = line.match(/^\s*\\d+[.)]\s+(.+)$/);
     if (bullet || numbered) {
       flushParagraph();
       list.push({ text: (bullet ?? numbered)![1], ordered: Boolean(numbered) });
