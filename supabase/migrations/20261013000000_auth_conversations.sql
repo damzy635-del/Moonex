@@ -5,7 +5,8 @@ create table if not exists public.conversations (
   title text not null default 'New chat' check (char_length(title) between 1 and 200),
   model_profile text not null default 'moonex-pro-1.5',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint conversations_id_user_unique unique (id, user_id)
 );
 
 create index if not exists conversations_user_updated_idx
@@ -13,7 +14,7 @@ create index if not exists conversations_user_updated_idx
 
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
-  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  conversation_id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   role text not null check (role in ('user', 'assistant')),
   content text not null check (char_length(content) between 1 and 100000),
@@ -22,10 +23,6 @@ create table if not exists public.messages (
     foreign key (conversation_id, user_id)
     references public.conversations(id, user_id) on delete cascade
 );
-
--- Composite uniqueness enables the ownership-preserving message foreign key.
-alter table public.conversations
-  add constraint conversations_id_user_unique unique (id, user_id);
 
 create index if not exists messages_conversation_created_idx
   on public.messages (conversation_id, created_at asc);
