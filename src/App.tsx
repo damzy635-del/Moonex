@@ -75,7 +75,7 @@ export default function App() {
     } else if (savedActiveId && loaded.some((chat) => chat.id === savedActiveId)) {
       setActiveId((current) => current && loaded.some((chat) => chat.id === current) ? current : savedActiveId);
     } else if (loaded.length) {
-      setActiveId((current) => current && loaded.some((chat) => chat.id === current) ? current : null);
+      setActiveId((current) => current && loaded.some((chat) => chat.id === current) ? current : loaded[0].id);
     }
     setDataError("");
   }, []);
