@@ -37,7 +37,7 @@ const profileInstructions: Record<string, string> = {
 function bearerToken(request: ApiRequest): string | null {
   const header = request.headers.authorization ?? request.headers.Authorization;
   const value = Array.isArray(header) ? header[0] : header;
-  const match = value?.match(/^Bearer\\s+(.+)$/i);
+  const match = value?.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
 }
 
@@ -192,16 +192,16 @@ export default async function handler(request: ApiRequest, response: ApiResponse
             candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
           };
           const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-          if (text) response.write(`event: delta\\ndata: ${JSON.stringify({ text })}\\n\\n`);
+          if (text) response.write(`event: delta\ndata: ${JSON.stringify({ text })}\n\n`);
         } catch {
           // Ignore malformed provider chunks; never forward raw provider payloads to clients.
         }
       }
     }
-    response.write("event: done\\ndata: {}\\n\\n");
+    response.write("event: done\ndata: {}\n\n");
     response.end();
   } catch {
-    response.write(`event: error\\ndata: ${JSON.stringify({ message: "The AI response stream was interrupted. Please try again." })}\\n\\n`);
+    response.write(`event: error\ndata: ${JSON.stringify({ message: "The AI response stream was interrupted. Please try again." })}\n\n`);
     response.end();
   } finally {
     reader.releaseLock();
