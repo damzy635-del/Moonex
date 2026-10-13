@@ -26,3 +26,9 @@ test("reconciliation preserves existing schema columns and never deletes or reas
   assert.doesNotMatch(sql, /\b(drop table|truncate|delete from|update public\.(conversations|messages))\b/i);
   assert.doesNotMatch(sql, /drop column/i);
 });
+
+
+test("reconciliation accepts the existing system message role", async () => {
+  const sql = await readFile(migrationPath, "utf8");
+  assert.match(sql, /role not in \('user', 'assistant', 'system'\)/i);
+});
