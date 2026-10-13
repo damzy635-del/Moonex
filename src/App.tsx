@@ -19,6 +19,98 @@ const starters = [
 
 const previewReply = "This message is stored locally for preview. Sign in and configure the AI provider to get a live response.";
 
+function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
+  const pattern = /(`{3}[\\s\\S]*?`{3}|`[^\\n`]+`|\\*\\*[^*]+\\*\\*|__[^_]+__|\\*[^*]+\\*|_[^_]+_|~~[^~]+~~)/g;
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = pattern.exec(text))) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    const token = match[0];
+    if (token.startsWith("```")) {
+      const body = token.slice(3, -3).replace(/^[a-zA-Z0-9_-]+\\n/, "");
+      nodes.push(<code key={`${keyPrefix}-${index++}`}>{body}</code>);
+    } else if (token.startsWith("`")) {
+      nodes.push(<code key={`${keyPrefix}-${index++}`}>{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("**") || token.startsWith("__")) {
+      nodes.push(<strong key={`${keyPrefix}-${index++}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("~~")) {
+      nodes.push(<del key={`${keyPrefix}-${index++}`}>{token.slice(2, -2)}</del>);
+    } else {
+      nodes.push(<em key={`${keyPrefix}-${index++}`}>{token.slice(1, -1)}</em>);
+    }
+    cursor = match.index + token.length;
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  const lines = content.replace(/\\r\\n?/g, "\\n").split("\\n");
+  const blocks: React.ReactNode[] = [];
+  let paragraph: string[] = [];
+  let list: { text: string; ordered: boolean }[] = [];
+  let code: string[] = [];
+  let inCode = false;
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push(<p key={`p-${blocks.length}`}>{paragraph.map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{renderInlineMarkdown(line, `p-${blocks.length}-${i}`)}</React.Fragment>)}</p>);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      const ordered = list[0].ordered;
+      const items = list;
+      blocks.push(ordered
+        ? <ol key={`ol-${blocks.length}`}>{items.map((item, i) => <li key={i}>{renderInlineMarkdown(item.text, `ol-${blocks.length}-${i}`)}</li>)}</ol>
+        : <ul key={`ul-${blocks.length}`}>{items.map((item, i) => <li key={i}>{renderInlineMarkdown(item.text, `ul-${blocks.length}-${i}`)}</li>)}</ul>);
+      list = [];
+    }
+  };
+  const flushCode = () => {
+    blocks.push(<pre key={`code-${blocks.length}`}><code>{code.join("\\n")}</code></pre>);
+    code = [];
+  };
+  lines.forEach((line) => {
+    if (line.trim().startsWith("```")) {
+      flushParagraph(); flushList();
+      if (inCode) { flushCode(); inCode = false; } else { inCode = true; }
+      return;
+    }
+    if (inCode) { code.push(line); return; }
+    if (!line.trim()) { flushParagraph(); flushList(); return; }
+    if (/^\\s*([-*_])(?:\\s*\\1){2,}\\s*$/.test(line)) { flushParagraph(); flushList(); blocks.push(<hr key={`hr-${blocks.length}`} />); return; }
+    const heading = line.match(/^\\s{0,3}(#{1,6})\\s+(.+?)\\s*#*\\s*$/);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = heading[1].length;
+      const children = renderInlineMarkdown(heading[2], `h-${blocks.length}`);
+      if (level === 1) blocks.push(<h1 key={blocks.length}>{children}</h1>);
+      else if (level === 2) blocks.push(<h2 key={blocks.length}>{children}</h2>);
+      else if (level === 3) blocks.push(<h3 key={blocks.length}>{children}</h3>);
+      else if (level === 4) blocks.push(<h4 key={blocks.length}>{children}</h4>);
+      else if (level === 5) blocks.push(<h5 key={blocks.length}>{children}</h5>);
+      else blocks.push(<h6 key={blocks.length}>{children}</h6>);
+      return;
+    }
+    const bullet = line.match(/^\\s*[-*+]\\s+(.+)$/);
+    const numbered = line.match(/^\\s*\\d+[.)]\\s+(.+)$/);
+    if (bullet || numbered) {
+      flushParagraph();
+      list.push({ text: (bullet ?? numbered)![1], ordered: Boolean(numbered) });
+      return;
+    }
+    flushList();
+    paragraph.push(line);
+  });
+  flushParagraph(); flushList();
+  if (inCode) flushCode();
+  return <div className="markdown-content">{blocks}</div>;
+}
+
+
 export default function App() {
   const { t } = useTranslation();
   const [dark, setDark] = useState(false);
@@ -284,7 +376,7 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-content">{message.content}</div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : message.content}</div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}
