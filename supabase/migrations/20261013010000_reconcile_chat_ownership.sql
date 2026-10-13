@@ -19,7 +19,7 @@ begin
 
   if exists (
     select 1 from public.messages
-    where role not in ('user', 'assistant')
+    where role not in ('user', 'assistant', 'system')
        or content is null
        or char_length(content) not between 1 and 100000
   ) then
