@@ -178,7 +178,7 @@ export default function App() {
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error("Your session expired. Sign in again to continue.");
 
-      const context: Message[] = (active?.messages ?? [])
+      const context = (active?.messages ?? [])
         .filter((message) => message.content !== previewReply && message.content !== "Thinking…")
         .map((message) => ({ role: message.role, content: message.content }));
       context.push(userMessage);
