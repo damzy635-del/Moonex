@@ -12,6 +12,10 @@ type ApiResponse = {
   setHeader(name: string, value: string): void;
   write(chunk: string): boolean;
   end(): void;
+  on?(event: string, listener: () => void): unknown;
+  off?(event: string, listener: () => void): unknown;
+  destroyed?: boolean;
+  writableEnded?: boolean;
 };
 
 const enabledProfiles = new Set([
@@ -63,7 +67,16 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   const authClient = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
-  const { data: authData, error: authError } = await authClient.auth.getUser(token);
+  let authData: { user: { id: string } | null };
+  let authError: unknown;
+  try {
+    const result = await authClient.auth.getUser(token);
+    authData = result.data;
+    authError = result.error;
+  } catch {
+    sendError(response, 503, "AUTH_SERVICE_UNAVAILABLE", "Authentication could not be verified right now. Please try again.");
+    return;
+  }
   if (authError || !authData.user) {
     sendError(response, 401, "INVALID_SESSION", "Your session is invalid or expired. Sign in again.");
     return;
@@ -124,6 +137,11 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
   // Configure the model server-side. Never accept upstream model IDs from the browser.
   const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+  const clientAbort = new AbortController();
+  const abortIfClientDisconnected = () => {
+    if (response.destroyed || response.writableEnded) clientAbort.abort();
+  };
+  response.on?.("close", abortIfClientDisconnected);
   let upstream: Response;
   try {
     upstream = await fetch(
@@ -144,15 +162,18 @@ export default async function handler(request: ApiRequest, response: ApiResponse
           })),
           generationConfig: { maxOutputTokens: 2048 },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.any([AbortSignal.timeout(60_000), clientAbort.signal]),
       },
     );
   } catch {
+    response.off?.("close", abortIfClientDisconnected);
+    if (clientAbort.signal.aborted || response.destroyed) return;
     sendError(response, 502, "PROVIDER_UNAVAILABLE", "Moonex could not reach the AI provider. Please try again.");
     return;
   }
 
   if (!upstream.ok) {
+    response.off?.("close", abortIfClientDisconnected);
     if (upstream.status === 401 || upstream.status === 403) {
       sendError(response, 502, "PROVIDER_AUTH_FAILED", "The Gemini API key was rejected. Check GEMINI_API_KEY in the server environment.");
     } else if (upstream.status === 429) {
@@ -164,6 +185,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   }
 
   if (!upstream.body) {
+    response.off?.("close", abortIfClientDisconnected);
     sendError(response, 502, "EMPTY_PROVIDER_STREAM", "Gemini returned an empty response stream.");
     return;
   }
@@ -176,34 +198,48 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const processLine = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const chunk = JSON.parse(payload) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+      if (text && !clientAbort.signal.aborted && !response.destroyed) {
+        response.write(\`event: delta\\ndata: \${JSON.stringify({ text })}\\n\\n\`);
+      }
+    } catch {
+      // Ignore malformed provider chunks; never forward raw provider payloads to clients.
+    }
+  };
   try {
     while (true) {
+      if (clientAbort.signal.aborted || response.destroyed) {
+        await reader.cancel().catch(() => undefined);
+        return;
+      }
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
+      const lines = buffer.split("\\n");
       buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const chunk = JSON.parse(payload) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-          };
-          const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-          if (text) response.write(`event: delta\ndata: ${JSON.stringify({ text })}\n\n`);
-        } catch {
-          // Ignore malformed provider chunks; never forward raw provider payloads to clients.
-        }
-      }
+      for (const line of lines) processLine(line);
     }
-    response.write("event: done\ndata: {}\n\n");
-    response.end();
+    buffer += decoder.decode();
+    if (buffer.trim()) processLine(buffer);
+    if (!clientAbort.signal.aborted && !response.destroyed) {
+      response.write("event: done\\ndata: {}\\n\\n");
+      response.end();
+    }
   } catch {
-    response.write(`event: error\ndata: ${JSON.stringify({ message: "The AI response stream was interrupted. Please try again." })}\n\n`);
-    response.end();
+    if (!clientAbort.signal.aborted && !response.destroyed) {
+      response.write(\`event: error\\ndata: \${JSON.stringify({ message: "The AI response stream was interrupted. Please try again." })}\\n\\n\`);
+      response.end();
+    }
   } finally {
+    response.off?.("close", abortIfClientDisconnected);
     reader.releaseLock();
   }
 }
