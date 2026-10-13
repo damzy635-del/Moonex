@@ -32,3 +32,11 @@ test("reconciliation accepts the existing system message role", async () => {
   const sql = await readFile(migrationPath, "utf8");
   assert.match(sql, /role not in \('user', 'assistant', 'system'\)/i);
 });
+
+
+test("RLS event-trigger function is not exposed as an application RPC", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20261013020000_restrict_rls_event_function.sql", import.meta.url), "utf8");
+  assert.match(sql, /to_regprocedure\('public\.rls_auto_enable\(\)'\) is not null/i);
+  assert.match(sql, /revoke execute on function public\.rls_auto_enable\(\) from public, anon, authenticated/i);
+  assert.doesNotMatch(sql, /drop function|drop event trigger/i);
+});
