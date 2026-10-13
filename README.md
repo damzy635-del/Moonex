@@ -13,9 +13,10 @@ Fresh React, TypeScript, Vite and Express foundation. Legacy source remains pres
 ## Live AI chat
 
 - The chat API is available at `POST /api/v1/chat` locally and on Vercel. It verifies the caller's Supabase access token before contacting the provider.
-- Add `OPENAI_API_KEY` as a server-side environment variable. Do not expose it to the browser or use a `VITE_*` prefix.
-- Supported text profiles currently route to the configured OpenAI API: Lite/Fast to `gpt-6-luna`, Pro to `gpt-6-sol`, Pro Max/Ultra/Reasoning to `gpt-6-astra`, and Code to `gpt-5.3-codex`.
-- Vision and Research currently return a clear capability-not-configured response until image input and web-search adapters are implemented.
+- Configure `GEMINI_API_KEY` as a server-side environment variable. `GOOGLE_API_KEY` is accepted as a fallback. Never use a `VITE_*` prefix for provider keys.
+- `GEMINI_MODEL` optionally selects the upstream Gemini model; the default is `gemini-3.1-flash-lite`. Confirm that the selected model is available to your Google AI Studio project.
+- Lite, Fast, Pro, Pro Max, Ultra, Reasoning, and Code are Moonex product profiles. They currently use the configured Gemini model with different response-style instructions; they are not separate Google model names.
+- Vision and Research return a capability-not-configured response until image input and web-search adapters are implemented.
 - The endpoint streams Server-Sent Events and stores user/assistant messages in the user's conversation under RLS. Provider keys remain server-side.
 
 ## Local development
