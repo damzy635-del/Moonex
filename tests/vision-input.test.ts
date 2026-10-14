@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MAX_IMAGE_BYTES, MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES, validateVisionImages } from "../server/vision-input.ts";
+import { buildVisionParts, MAX_IMAGE_BYTES, MAX_IMAGE_COUNT, MAX_TOTAL_IMAGE_BYTES, validateVisionImages } from "../server/vision-input.ts";
 
 const image = (data = "AQID", mimeType = "image/png") => ({ data, mimeType });
 
@@ -33,4 +33,21 @@ test("enforces image count, per-image size, and aggregate size limits", () => {
 test("empty images are valid for text profiles but zero-byte image data is rejected", () => {
   assert.deepEqual(validateVisionImages(undefined), { images: [] });
   assert.match(validateVisionImages([image("")]).error ?? "", /base64/);
+});
+
+
+test("builds Gemini multimodal parts with text first and exact image MIME/data", () => {
+  const images = [
+    { mimeType: "image/png", data: "AQID" },
+    { mimeType: "image/webp", data: "BAUG" },
+  ];
+  assert.deepEqual(buildVisionParts("What is in these pictures?", images), [
+    { text: "What is in these pictures?" },
+    { inline_data: { mime_type: "image/png", data: "AQID" } },
+    { inline_data: { mime_type: "image/webp", data: "BAUG" } },
+  ]);
+});
+
+test("builds text-only parts when no images are provided", () => {
+  assert.deepEqual(buildVisionParts("Hello"), [{ text: "Hello" }]);
 });
