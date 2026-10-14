@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { createChatRateLimiter, RateLimitUnavailableError } from "./rate-limit.js";
+import { createChatRateLimiter } from "./rate-limit.js";
+import { resolveGeminiModel } from "./model-routing.js";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ApiRequest = {
@@ -160,7 +161,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   }
 
   // Configure the model server-side. Never accept upstream model IDs from the browser.
-  const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+  const model = resolveGeminiModel(profile);
   const clientAbort = new AbortController();
   const abortIfClientDisconnected = () => {
     if (response.destroyed || response.writableEnded) clientAbort.abort();
