@@ -21,7 +21,7 @@ const starters = [
 const previewReply = "This message is stored locally for preview. Sign in and configure the AI provider to get a live response.";
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  const pattern = /(`{3}[\s\S]*?`{3}|`[^\n`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g;
+  const pattern = /(`{3}[\s\S]*?`{3}|`[^\n`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -29,7 +29,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
     const token = match[0];
-    if (token.startsWith("```")) {
+    if (token.startsWith("[") && token.includes("](")) {\n      const link = token.match(/^\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)$/);\n      if (link) nodes.push(<a key={`${keyPrefix}-${index++}`} href={link[2]} target="_blank" rel="noopener noreferrer">{link[1]}</a>);\n      else nodes.push(token);\n    } else if (token.startsWith("```")) {
       const body = token.slice(3, -3).replace(/^[a-zA-Z0-9_-]+\n/, "");
       nodes.push(<code key={`${keyPrefix}-${index++}`}>{body}</code>);
     } else if (token.startsWith("`")) {
