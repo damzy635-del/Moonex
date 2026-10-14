@@ -166,6 +166,14 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     if (response.destroyed || response.writableEnded) clientAbort.abort();
   };
   response.on?.("close", abortIfClientDisconnected);
+  // A response may already be closed before this handler registers its listener.
+  // Detect that race before starting a billable upstream provider request.
+  abortIfClientDisconnected();
+  if (clientAbort.signal.aborted) {
+    response.off?.("close", abortIfClientDisconnected);
+    return;
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(
