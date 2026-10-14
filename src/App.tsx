@@ -29,7 +29,11 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
     const token = match[0];
-    if (token.startsWith("[") && token.includes("](")) {\n      const link = token.match(/^\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)$/);\n      if (link) nodes.push(<a key={`${keyPrefix}-${index++}`} href={link[2]} target="_blank" rel="noopener noreferrer">{link[1]}</a>);\n      else nodes.push(token);\n    } else if (token.startsWith("```")) {
+    if (token.startsWith("[") && token.includes("](")) {
+      const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (link) nodes.push(<a key={`${keyPrefix}-${index++}`} href={link[2]} target="_blank" rel="noopener noreferrer">{link[1]}</a>);
+      else nodes.push(token);
+    } else if (token.startsWith("```")) {
       const body = token.slice(3, -3).replace(/^[a-zA-Z0-9_-]+\n/, "");
       nodes.push(<code key={`${keyPrefix}-${index++}`}>{body}</code>);
     } else if (token.startsWith("`")) {
