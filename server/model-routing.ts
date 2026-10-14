@@ -6,6 +6,7 @@ const profileEnvironmentVariables: Record<string, string> = {
   "moonex-ultra-1.5": "GEMINI_MODEL_ULTRA",
   "moonex-reasoning-1.5": "GEMINI_MODEL_REASONING",
   "moonex-code-1.5": "GEMINI_MODEL_CODE",
+  "moonex-research-1.5": "GEMINI_MODEL_RESEARCH",
 };
 
 export type TextModelProfile = keyof typeof profileEnvironmentVariables;
