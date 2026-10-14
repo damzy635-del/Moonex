@@ -140,3 +140,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 .markdown-content pre code{white-space:pre}
 .markdown-content strong{font-weight:700}
 .markdown-content a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+
+/* Vision image attachment controls */
+.image-file-input{display:none}
+.attach-image{display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:var(--muted);font-size:11px}
+.attach-image:hover{color:var(--accent)}
+.image-preview-list{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0 12px}
+.image-preview{position:relative;display:flex;align-items:center;gap:7px;max-width:210px;padding:5px 25px 5px 5px;border:1px solid var(--line);border-radius:10px;background:var(--soft);font-size:11px;color:var(--muted)}
+.image-preview img{width:42px;height:42px;object-fit:cover;border-radius:6px}
+.image-preview span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:125px}
+.image-preview button{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:50%;background:var(--line);color:var(--text)}
