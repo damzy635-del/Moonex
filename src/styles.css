@@ -150,3 +150,35 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 .image-preview img{width:42px;height:42px;object-fit:cover;border-radius:6px}
 .image-preview span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:125px}
 .image-preview button{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:50%;background:var(--line);color:var(--text)}
+
+
+.sent-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0 0 0.75rem;
+}
+.sent-image {
+  margin: 0;
+  max-width: min(15rem, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border, #d9d9df);
+  border-radius: 0.75rem;
+  background: var(--surface, #fff);
+}
+.sent-image img {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  max-height: 13rem;
+  object-fit: contain;
+}
+.sent-image figcaption {
+  max-width: 14rem;
+  padding: 0.3rem 0.5rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted, #666);
+}
