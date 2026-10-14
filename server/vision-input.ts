@@ -15,9 +15,8 @@ export function validateVisionImages(value: unknown): { images: VisionImage[]; e
   for (const item of value) {
     if (!item || typeof item !== "object") return { images: [], error: "Each image must include a MIME type and base64 data." };
     const candidate = item as { mimeType?: unknown; data?: unknown };
-    if (typeof candidate.mimeType !== "string" || !allowedMimeTypes.has(candidate.mimeType)) {
-      return { images: [], error: "Images must be JPEG, PNG, WebP, or GIF." };
-    }
+    if (typeof candidate.mimeType !== "string") return { images: [], error: "Each image must include a MIME type." };
+    if (!allowedMimeTypes.has(candidate.mimeType)) return { images: [], error: "Images must be JPEG, PNG, WebP, or GIF." };
     if (typeof candidate.data !== "string" || !candidate.data.length || candidate.data.length % 4 !== 0 ||
         !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(candidate.data)) {
       return { images: [], error: "Image data must be valid base64." };
