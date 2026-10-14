@@ -30,3 +30,15 @@ export function validateVisionImages(value: unknown): { images: VisionImage[]; e
   }
   return { images };
 }
+
+export type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
+
+/** Build Gemini REST parts without allowing images to leak into earlier context messages. */
+export function buildVisionParts(text: string, images: VisionImage[] = []): GeminiPart[] {
+  return [
+    { text },
+    ...images.map((image) => ({
+      inline_data: { mime_type: image.mimeType, data: image.data },
+    })),
+  ];
+}
