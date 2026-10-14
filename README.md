@@ -15,9 +15,10 @@ Fresh React, TypeScript, Vite and Express foundation. Legacy source remains pres
 
 - The chat API is available at `POST /api/v1/chat` locally and on Vercel. It verifies the caller's Supabase access token before contacting the provider.
 - Configure `GEMINI_API_KEY` as a server-side environment variable. `GOOGLE_API_KEY` is accepted as a fallback. Never use a `VITE_*` prefix for provider keys.
-- `GEMINI_MODEL` optionally selects the upstream Gemini model; the default is `gemini-3.1-flash-lite`. Confirm that the selected model is available to your Google AI Studio project.
-- Lite, Fast, Pro, Pro Max, Ultra, Reasoning, and Code are Moonex product profiles. They currently use the configured Gemini model with different response-style instructions; they are not separate Google model names.
-- Vision and Research return a capability-not-configured response until image input and web-search adapters are implemented.
+- `GEMINI_MODEL` optionally selects the fallback upstream Gemini model; the default is `gemini-3.1-flash-lite`. Confirm each selected model ID is available to your Google AI Studio project.
+- Optional server-only overrides are `GEMINI_MODEL_LITE`, `GEMINI_MODEL_FAST`, `GEMINI_MODEL_PRO`, `GEMINI_MODEL_PRO_MAX`, `GEMINI_MODEL_ULTRA`, `GEMINI_MODEL_REASONING`, `GEMINI_MODEL_CODE`, and `GEMINI_MODEL_RESEARCH`. Routing order is profile override → `GEMINI_MODEL` → default model. Never use a `VITE_*` prefix for these values.
+- Lite, Fast, Pro, Pro Max, Ultra, Reasoning, and Code are Moonex product profiles with different response-style instructions; they are not separate Google model names.
+- Research now performs a server-side Tavily web search and grounds the Gemini response in up to five validated results. Configure server-side `TAVILY_API_KEY` to enable it; results include source URLs and are treated as untrusted input. Vision remains unimplemented and returns a capability-not-configured response.
 - The endpoint streams Server-Sent Events and stores user/assistant messages in the user's conversation under RLS. Provider keys remain server-side.
 
 ## Production environment checklist
@@ -29,6 +30,7 @@ Set these in the **server** environment before enabling live chat:
 - `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
+- `TAVILY_API_KEY` (required only if enabling Research)
 
 The shared Upstash Redis limiter allows 10 chat requests per authenticated user per 60-second fixed window. In production, chat fails closed with HTTP 503 if shared rate limiting is not configured or cannot be reached. Do not remove this guard or replace it with process-local memory.
 
@@ -44,7 +46,7 @@ Also verify:
 - Supabase leaked-password protection is currently disabled because it is unavailable on the project's current plan. This is a documented security limitation, not a release-blocking code change.
 - Payment event table access is restricted by a migration, but payment webhook processing and its production configuration must be separately implemented and verified before accepting real payments.
 - Database migrations and environment configuration must be verified against the live project; a successful CI run validates repository checks, not live database deployment.
-- Vision and Research capabilities are not implemented yet.
+- Vision is not implemented yet. Research requires a valid Tavily API key and a Gemini model available to the configured Google AI Studio project; external provider behavior and deployed environment variables still need live verification.
 
 ## Local development
 
