@@ -46,6 +46,8 @@ Also verify:
 - Supabase leaked-password protection is currently disabled because it is unavailable on the project's current plan. This is a documented security limitation, not a release-blocking code change.
 - Payment event table access is restricted by a migration, but payment webhook processing and its production configuration must be separately implemented and verified before accepting real payments.
 - Database migrations and environment configuration must be verified against the live project; a successful CI run validates repository checks, not live database deployment.
+- The live Supabase project currently reports an empty migration ledger despite having existing application tables and data. Do **not** apply the migration directory wholesale or mark historical migrations as applied without a reviewed baseline/reconciliation plan. The least-privilege grants migration is committed for review but has not been applied to the live database.
+- The Vercel serverless API exposes chat, health, and model-catalog routes. Payment webhook/checkout routes are not implemented; do not accept real payments until a provider integration, signature verification, idempotency, and subscription reconciliation are implemented and tested.
 - Vision input is implemented in the API and requires a valid Gemini model that supports image input. Research requires a valid Tavily API key and a Gemini model available to the configured Google AI Studio project; external provider behavior and deployed environment variables still need live verification.
 
 ## Local development
