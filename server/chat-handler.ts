@@ -208,7 +208,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
         },
         body: JSON.stringify({
           systemInstruction: {
-            parts: [{ text: `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with the title and URL for each cited source. Do not cite sources that were not supplied." : ""}` }],
+            parts: [{ text: `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with each source as a Markdown link in the form [Source title](https://example.com/path), using the exact supplied URL. Do not cite sources that were not supplied." : ""}` }],
           },
           contents: messages.map((message, index) => ({
             role: message.role === "assistant" ? "model" : "user",
