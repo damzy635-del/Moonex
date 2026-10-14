@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createChatRateLimiter } from "./rate-limit.js";
 import { resolveGeminiModel } from "./model-routing.js";
 import { searchWeb, type ResearchSource } from "./research-search.js";
-import { validateVisionImages } from "./vision-input.js";
+import { buildVisionParts, validateVisionImages } from "./vision-input.js";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ApiRequest = {
@@ -227,12 +227,9 @@ export default async function handler(request: ApiRequest, response: ApiResponse
           },
           contents: messages.map((message, index) => ({
             role: message.role === "assistant" ? "model" : "user",
-            parts: [
-              { text: message.content + (profile === "moonex-research-1.5" && index === messages.length - 1 ? researchContext : "") },
-              ...(profile === "moonex-vision-1.5" && index === messages.length - 1
-                ? images.map((image) => ({ inline_data: { mime_type: image.mimeType, data: image.data } }))
-                : []),
-            ],
+            parts: profile === "moonex-vision-1.5" && index === messages.length - 1
+              ? buildVisionParts(message.content, images)
+              : [{ text: message.content + (profile === "moonex-research-1.5" && index === messages.length - 1 ? researchContext : "") }],
           })),
           generationConfig: { maxOutputTokens: 2048 },
         }),
