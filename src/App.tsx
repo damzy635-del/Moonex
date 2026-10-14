@@ -7,7 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import { MODEL_PROFILES } from "../packages/model-catalog/index";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 
-type Message = { id: string; role: "user" | "assistant"; content: string };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: { id: string; name: string; preview: string }[] };
 type Chat = { id: string; title: string; messages: Message[]; updated: number; model: string; persisted?: boolean };
 type AuthMode = "signin" | "signup";
 type SelectedImage = { id: string; name: string; mimeType: string; data: string; preview: string; bytes: number };
@@ -254,7 +254,7 @@ export default function App() {
     }
     setDataError("");
     setSending(true);
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content };
+    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, ...(selectedImages.length ? { images: selectedImages.map(({ id, name, preview }) => ({ id, name, preview })) } : {}) };
     const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
     let persisted = Boolean(user && supabase && active?.persisted);
@@ -392,7 +392,7 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : message.content}</div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}
