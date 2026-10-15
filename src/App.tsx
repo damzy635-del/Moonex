@@ -140,7 +140,6 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [preferences, setPreferences] = useState<LocalPreferences>(readPreferences);
   const [settingsNotice, setSettingsNotice] = useState("");
-  const [settingsSearch, setSettingsSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -156,7 +155,7 @@ export default function App() {
   const [modelOpen, setModelOpen] = useState(false);
   const [model, setModel] = useState<string>(MODEL_PROFILES[2].id);
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => { try { return window.localStorage.getItem("moonex-draft") ?? ""; } catch { return ""; } });
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -226,6 +225,8 @@ export default function App() {
   const active = chats.find((chat) => chat.id === activeId);
   useEffect(() => { window.localStorage.setItem("moonex-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { window.localStorage.setItem("moonex-ui-preferences", JSON.stringify(preferences)); }, [preferences]);
+  useEffect(() => { document.querySelector(".app-shell")?.classList.toggle("compact-mode", preferences.compactMode); }, [preferences.compactMode]);
+  useEffect(() => { if (preferences.saveDrafts) window.localStorage.setItem("moonex-draft", draft); else window.localStorage.removeItem("moonex-draft"); }, [draft, preferences.saveDrafts]);
   const updatePreference = <K extends keyof LocalPreferences>(key: K, value: LocalPreferences[K]) => setPreferences((current) => ({ ...current, [key]: value }));
   useEffect(() => {
     if (user && activeId) window.localStorage.setItem(`moonex-active-chat:${user.id}`, activeId);
