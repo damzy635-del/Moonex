@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, ChevronDown, ImagePlus, LogIn, LogOut, Menu, MessageSquarePlus, Moon, PanelLeftClose, Search, Settings2, Sparkles, Sun, UserRound, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Copy, ImagePlus, LogIn, LogOut, Menu, MessageSquarePlus, Moon, MoreHorizontal, PanelLeftClose, Pin, RotateCw, Search, Settings2, Sparkles, Sun, Trash2, UserRound, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { MODEL_PROFILES } from "../packages/model-catalog/index";
 import { supabase, supabaseConfigured } from "./lib/supabase";
@@ -158,6 +158,9 @@ export default function App() {
   const [draft, setDraft] = useState(() => { try { return window.localStorage.getItem("moonex-draft") ?? ""; } catch { return ""; } });
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
+  const [pinnedChats, setPinnedChats] = useState<string[]>(() => { try { return JSON.parse(window.localStorage.getItem("moonex-pinned-chats") ?? "[]") as string[]; } catch { return []; } });
+  const [chatMenuId, setChatMenuId] = useState<string | null>(null);
+  const [messageNotice, setMessageNotice] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dataError, setDataError] = useState("");
   const [sending, setSending] = useState(false);
@@ -225,13 +228,56 @@ export default function App() {
   const active = chats.find((chat) => chat.id === activeId);
   useEffect(() => { window.localStorage.setItem("moonex-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { window.localStorage.setItem("moonex-ui-preferences", JSON.stringify(preferences)); }, [preferences]);
+  useEffect(() => { window.localStorage.setItem("moonex-pinned-chats", JSON.stringify(pinnedChats)); }, [pinnedChats]);
   useEffect(() => { document.querySelector(".app-shell")?.classList.toggle("compact-mode", preferences.compactMode); }, [preferences.compactMode]);
   useEffect(() => { if (preferences.saveDrafts) window.localStorage.setItem("moonex-draft", draft); else window.localStorage.removeItem("moonex-draft"); }, [draft, preferences.saveDrafts]);
   const updatePreference = <K extends keyof LocalPreferences>(key: K, value: LocalPreferences[K]) => setPreferences((current) => ({ ...current, [key]: value }));
   useEffect(() => {
     if (user && activeId) window.localStorage.setItem(`moonex-active-chat:${user.id}`, activeId);
   }, [activeId, user]);
-  const filtered = useMemo(() => chats.filter((chat) => chat.title.toLowerCase().includes(query.toLowerCase())), [chats, query]);
+  const filtered = useMemo(() => chats.filter((chat) => chat.title.toLowerCase().includes(query.toLowerCase())).sort((a,b) => Number(pinnedChats.includes(b.id))-Number(pinnedChats.includes(a.id)) || b.updated-a.updated), [chats, query, pinnedChats]);
+
+  async function renameChat(chat: Chat) {
+    const nextTitle = window.prompt("Rename conversation", chat.title)?.trim();
+    if (!nextTitle || nextTitle === chat.title) return;
+    if (chat.persisted && user && supabase) {
+      const { error } = await supabase.from("conversations").update({ title: nextTitle.slice(0, 120) }).eq("id", chat.id).eq("user_id", user.id);
+      if (error) { setDataError(`Could not rename conversation: ${error.message}`); return; }
+    }
+    setChats((current) => current.map((item) => item.id === chat.id ? { ...item, title: nextTitle.slice(0,120) } : item));
+    setChatMenuId(null);
+  }
+
+  async function deleteChat(chat: Chat) {
+    if (!window.confirm(`Delete “${chat.title}”? This cannot be undone.`)) return;
+    if (chat.persisted && user && supabase) {
+      const { error } = await supabase.from("conversations").delete().eq("id", chat.id).eq("user_id", user.id);
+      if (error) { setDataError(`Could not delete conversation: ${error.message}`); return; }
+    }
+    setChats((current) => current.filter((item) => item.id !== chat.id));
+    setPinnedChats((current) => current.filter((id) => id !== chat.id));
+    if (activeId === chat.id) {
+      setActiveId(null);
+      if (user) window.localStorage.setItem(`moonex-active-chat:${user.id}`, "__new__");
+    }
+    setChatMenuId(null);
+  }
+
+  async function copyMessage(content: string) {
+    try { await navigator.clipboard.writeText(content); setMessageNotice("Copied to clipboard"); }
+    catch { setMessageNotice("Clipboard access is unavailable in this browser."); }
+    window.setTimeout(() => setMessageNotice(""), 2200);
+  }
+
+  function retryResponse(chat: Chat, messageIndex: number) {
+    const previousUser = [...chat.messages.slice(0,messageIndex)].reverse().find((item) => item.role === "user");
+    if (!previousUser) return;
+    setActiveId(chat.id);
+    setDraft(previousUser.content);
+    setMessageNotice("Prompt restored to the composer. Send it again to retry.");
+    window.setTimeout(() => setMessageNotice(""), 3500);
+    document.querySelector(".composer textarea")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -398,7 +444,7 @@ export default function App() {
     <button className="new-chat" onClick={() => { setActiveId(null); if (user) window.localStorage.setItem(`moonex-active-chat:${user.id}`, "__new__"); setDraft(""); setMobileNav(false); }}><MessageSquarePlus size={17} /><span>{t("newChat")}</span><span className="shortcut">⌘ K</span></button>
     <label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} /></label>
     <div className="section-label">{t("recent")}</div>
-    <nav className="chat-list">{filtered.map((chat) => <button key={chat.id} className={chat.id === activeId ? "chat-link active" : "chat-link"} onClick={() => { setActiveId(chat.id); setMobileNav(false); }}>{chat.title}</button>)}</nav>
+    <nav className="chat-list">{filtered.map((chat) => <div key={chat.id} className={chat.id === activeId ? "chat-row active" : "chat-row"}><button className="chat-link" title={chat.title} onClick={() => { setActiveId(chat.id); setMobileNav(false); setChatMenuId(null); }}>{pinnedChats.includes(chat.id) && <Pin size={12} className="chat-pin-indicator" />}{chat.title}</button><button className="chat-more" aria-label={`Options for ${chat.title}`} aria-expanded={chatMenuId===chat.id} onClick={() => setChatMenuId((current)=>current===chat.id?null:chat.id)}><MoreHorizontal size={16}/></button>{chatMenuId===chat.id && <div className="chat-context-menu"><button onClick={()=>{setPinnedChats((current)=>current.includes(chat.id)?current.filter((id)=>id!==chat.id):[...current,chat.id]);setChatMenuId(null);}}><Pin size={14}/>{pinnedChats.includes(chat.id)?"Unpin conversation":"Pin conversation"}</button><button onClick={()=>void renameChat(chat)}><span className="menu-letter">Aa</span>Rename</button><button className="danger-action" onClick={()=>void deleteChat(chat)}><Trash2 size={14}/>Delete</button></div>}</div>)}</nav>
     <div className="sidebar-bottom"><div className="profile"><div className="avatar">{user?.email?.[0]?.toUpperCase() ?? "M"}</div><div className="profile-copy"><strong>{user?.email ?? "Moonex"}</strong><small>{user ? "Synced workspace" : "Local preview"}</small></div><button className="icon-button" onClick={() => user ? setSettingsOpen(true) : (setAuthOpen(true), setAuthNotice(""), setAuthError(""))} aria-label={user ? "Settings" : "Sign in"}>{user ? <Settings2 size={17} /> : <LogIn size={17} />}</button></div></div>
   </aside>;
 
@@ -417,10 +463,10 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Retry prompt" aria-label="Retry prompt" onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}</div></div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
-      {dataError && <div role="alert" className="inline-alert">{dataError}</div>}
+      {dataError && <div role="alert" className="inline-alert">{dataError}</div>}{messageNotice && <div role="status" className="message-notice">{messageNotice}</div>}
       <footer className="composer-area"><div className="composer"><input className="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden id="moonex-image-upload" disabled={sending} onChange={async (event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (!files.length) return; if (model !== "moonex-vision-1.5") { setDataError("Select the Vision 1.5 profile before attaching images."); return; } if (selectedImages.length + files.length > 4) { setDataError("Attach no more than 4 images."); return; } const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); const next: SelectedImage[] = []; for (const file of files) { if (!allowed.has(file.type)) { setDataError("Images must be JPEG, PNG, WebP, or GIF."); return; } if (file.size <= 0 || file.size > 1_000_000) { setDataError("Each image must be no larger than 1 MB."); return; } const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image.")); reader.onerror = () => reject(new Error("Could not read image.")); reader.readAsDataURL(file); }); const comma = dataUrl.indexOf(","); next.push({ id: crypto.randomUUID(), name: file.name, mimeType: file.type, data: dataUrl.slice(comma + 1), preview: dataUrl, bytes: file.size }); } if ([...selectedImages, ...next].reduce((sum, item) => sum + item.bytes, 0) > 3_000_000) { setDataError("Combined image size must not exceed 3 MB."); return; } setSelectedImages((current) => [...current, ...next]); setDataError(""); }} /><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (preferences.enterToSend && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} />{selectedImages.length > 0 && <div className="image-preview-list" aria-label="Selected images">{selectedImages.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt={image.name} /><span title={image.name}>{image.name}</span><button type="button" onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} aria-label={`Remove ${image.name}`}><X size={13} /></button></div>)}</div>}<div className="composer-tools"><div className="composer-hint"><label className="attach-image" htmlFor="moonex-image-upload" title={model === "moonex-vision-1.5" ? "Attach images" : "Select Vision 1.5 to attach images"}><ImagePlus size={16} /><span>Images</span></label><span>Ask, create, explore</span></div><div className="composer-actions">{preferences.showModelInComposer && <span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span>}<button className="send-button" disabled={!draft.trim() || sending} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button></div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop settings-backdrop" onClick={() => { setSettingsOpen(false); setSettingsNotice(""); }}><section className="settings-dialog settings-workspace" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
