@@ -156,6 +156,7 @@ export default function App() {
   const [model, setModel] = useState<string>(MODEL_PROFILES[2].id);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState(() => { try { return window.localStorage.getItem("moonex-draft") ?? ""; } catch { return ""; } });
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [pinnedChats, setPinnedChats] = useState<string[]>(() => { try { return JSON.parse(window.localStorage.getItem("moonex-pinned-chats") ?? "[]") as string[]; } catch { return []; } });
@@ -313,6 +314,16 @@ export default function App() {
     else { setSettingsOpen(false); setAuthError(""); }
   }
 
+  function editMessage(chat: Chat, message: Message) {
+    if (message.role !== "user" || sending) return;
+    setActiveId(chat.id);
+    setEditingMessageId(message.id);
+    setDraft(message.content);
+    setMessageNotice("Editing this prompt will replace it and remove the later replies in this conversation.");
+    window.setTimeout(() => setMessageNotice(""), 4500);
+    document.querySelector(".composer textarea")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
   async function sendMessage(value = draft) {
     const content = value.trim();
     if (!content || sending) return;
@@ -332,9 +343,22 @@ export default function App() {
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, ...(selectedImages.length ? { images: selectedImages.map(({ id, name, preview }) => ({ id, name, preview })) } : {}) };
     const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
+    const editingIndex = editingMessageId && active ? active.messages.findIndex((message) => message.id === editingMessageId) : -1;
+    const isEditing = editingIndex >= 0 && Boolean(active);
     let persisted = Boolean(user && supabase && active?.persisted);
 
     try {
+      if (isEditing && active) {
+        if (persisted && user && supabase) {
+          const removeIds = active.messages.slice(editingIndex).map((message) => message.id);
+          if (removeIds.length) {
+            const { error } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).in("id", removeIds);
+            if (error) throw new Error(`Could not replace this prompt: ${error.message}`);
+          }
+        }
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : { ...chat, messages: chat.messages.slice(0, editingIndex) }));
+      }
+
       if (user && supabase) {
         if (!persisted) {
           const { data, error } = await supabase.from("conversations").insert({
@@ -349,21 +373,23 @@ export default function App() {
           }).eq("id", conversationId).eq("user_id", user.id);
           if (error) throw error;
         }
-        const { error: insertError } = await supabase.from("messages").insert({
+        const { data: savedUser, error: insertError } = await supabase.from("messages").insert({
           conversation_id: conversationId, user_id: user.id, role: "user", content,
-        });
+        }).select("id").single();
         if (insertError) throw insertError;
+        userMessage.id = savedUser.id;
         persisted = true;
       }
 
       setChats((current) => {
         const old = current.find((chat) => chat.id === conversationId);
+        const baseMessages = old ? (isEditing ? old.messages.slice(0, editingIndex) : old.messages) : [];
         const next: Chat = old
-          ? { ...old, title: old.messages.length ? old.title : content.slice(0, 48), messages: [...old.messages, userMessage, assistantMessage], updated: Date.now(), model, persisted }
+          ? { ...old, title: baseMessages.length ? old.title : content.slice(0, 48), messages: [...baseMessages, userMessage, assistantMessage], updated: Date.now(), model, persisted }
           : { id: conversationId, title: content.slice(0, 48), messages: [userMessage, assistantMessage], updated: Date.now(), model, persisted };
         return [next, ...current.filter((chat) => chat.id !== conversationId)];
       });
-      setActiveId(conversationId); setDraft(""); setMobileNav(false);
+      setActiveId(conversationId); setDraft(""); setEditingMessageId(null); setMobileNav(false);
 
       if (!user || !supabase) return;
 
@@ -372,7 +398,7 @@ export default function App() {
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error("Your session expired. Sign in again to continue.");
 
-      const context = (active?.messages ?? [])
+      const context = (active?.messages.slice(0, isEditing ? editingIndex : undefined) ?? [])
         .filter((message) => message.content !== previewReply && message.content !== "Thinking…")
         .map((message) => ({ role: message.role, content: message.content }));
       context.push(userMessage);
@@ -462,7 +488,7 @@ export default function App() {
 
   const sidebar = <aside className="sidebar">
     <div className="brand-row"><div className="brand-mark"><Sparkles size={18} /></div><span className="brand-name">moonex</span><button className="icon-button sidebar-collapse" onClick={() => setSidebarOpen(false)} aria-label="Collapse sidebar"><PanelLeftClose size={17} /></button></div>
-    <button className="new-chat" onClick={() => { setActiveId(null); if (user) window.localStorage.setItem(`moonex-active-chat:${user.id}`, "__new__"); setDraft(""); setMobileNav(false); }}><MessageSquarePlus size={17} /><span>{t("newChat")}</span><span className="shortcut">⌘ K</span></button>
+    <button className="new-chat" onClick={() => { setEditingMessageId(null); setActiveId(null); if (user) window.localStorage.setItem(`moonex-active-chat:${user.id}`, "__new__"); setDraft(""); setMobileNav(false); }}><MessageSquarePlus size={17} /><span>{t("newChat")}</span><span className="shortcut">⌘ K</span></button>
     <label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} /></label>
     <div className="section-label">{t("recent")}</div>
     <nav className="chat-list">{filtered.map((chat) => <div key={chat.id} className={chat.id === activeId ? "chat-row active" : "chat-row"}><button className="chat-link" title={chat.title} onClick={() => { setActiveId(chat.id); setMobileNav(false); setChatMenuId(null); }}>{pinnedChats.includes(chat.id) && <Pin size={12} className="chat-pin-indicator" />}{chat.title}</button><button className="chat-more" aria-label={`Options for ${chat.title}`} aria-expanded={chatMenuId===chat.id} onClick={() => setChatMenuId((current)=>current===chat.id?null:chat.id)}><MoreHorizontal size={16}/></button>{chatMenuId===chat.id && <div className="chat-context-menu"><button onClick={()=>{setPinnedChats((current)=>current.includes(chat.id)?current.filter((id)=>id!==chat.id):[...current,chat.id]);setChatMenuId(null);}}><Pin size={14}/>{pinnedChats.includes(chat.id)?"Unpin conversation":"Pin conversation"}</button><button onClick={()=>void renameChat(chat)}><span className="menu-letter">Aa</span>Rename</button><button className="danger-action" onClick={()=>void deleteChat(chat)}><Trash2 size={14}/>Delete</button></div>}</div>)}</nav>
@@ -484,11 +510,11 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Retry prompt" aria-label="Retry prompt" onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}</div></div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Retry prompt" aria-label="Retry prompt" onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}{message.role==="user" && <button title="Edit and resend" aria-label="Edit and resend" disabled={sending} onClick={()=>editMessage(active,message)}><span className="menu-letter">✎</span></button>}</div></div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}{messageNotice && <div role="status" className="message-notice">{messageNotice}</div>}
-      <footer className="composer-area"><div className="composer"><input className="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden id="moonex-image-upload" disabled={sending} onChange={async (event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (!files.length) return; if (model !== "moonex-vision-1.5") { setDataError("Select the Vision 1.5 profile before attaching images."); return; } if (selectedImages.length + files.length > 4) { setDataError("Attach no more than 4 images."); return; } const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); const next: SelectedImage[] = []; for (const file of files) { if (!allowed.has(file.type)) { setDataError("Images must be JPEG, PNG, WebP, or GIF."); return; } if (file.size <= 0 || file.size > 1_000_000) { setDataError("Each image must be no larger than 1 MB."); return; } const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image.")); reader.onerror = () => reject(new Error("Could not read image.")); reader.readAsDataURL(file); }); const comma = dataUrl.indexOf(","); next.push({ id: crypto.randomUUID(), name: file.name, mimeType: file.type, data: dataUrl.slice(comma + 1), preview: dataUrl, bytes: file.size }); } if ([...selectedImages, ...next].reduce((sum, item) => sum + item.bytes, 0) > 3_000_000) { setDataError("Combined image size must not exceed 3 MB."); return; } setSelectedImages((current) => [...current, ...next]); setDataError(""); }} /><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (preferences.enterToSend && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} />{selectedImages.length > 0 && <div className="image-preview-list" aria-label="Selected images">{selectedImages.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt={image.name} /><span title={image.name}>{image.name}</span><button type="button" onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} aria-label={`Remove ${image.name}`}><X size={13} /></button></div>)}</div>}<div className="composer-tools"><div className="composer-hint"><label className="attach-image" htmlFor="moonex-image-upload" title={model === "moonex-vision-1.5" ? "Attach images" : "Select Vision 1.5 to attach images"}><ImagePlus size={16} /><span>Images</span></label><span>Ask, create, explore</span></div><div className="composer-actions">{preferences.showModelInComposer && <span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span>}{sending ? <button className="send-button stop-button" type="button" onClick={() => requestController.current?.abort()} aria-label="Stop generation" title="Stop generation"><X size={17} /></button> : <button className="send-button" disabled={!draft.trim()} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button>}</div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
+      <footer className="composer-area">{editingMessageId && <div className="editing-banner"><span>Editing message — later messages will be replaced when you resend.</span><button type="button" onClick={() => { setEditingMessageId(null); setDraft(""); }} aria-label="Cancel editing"><X size={14}/> Cancel</button></div>}<div className="composer"><input className="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden id="moonex-image-upload" disabled={sending} onChange={async (event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (!files.length) return; if (model !== "moonex-vision-1.5") { setDataError("Select the Vision 1.5 profile before attaching images."); return; } if (selectedImages.length + files.length > 4) { setDataError("Attach no more than 4 images."); return; } const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); const next: SelectedImage[] = []; for (const file of files) { if (!allowed.has(file.type)) { setDataError("Images must be JPEG, PNG, WebP, or GIF."); return; } if (file.size <= 0 || file.size > 1_000_000) { setDataError("Each image must be no larger than 1 MB."); return; } const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image.")); reader.onerror = () => reject(new Error("Could not read image.")); reader.readAsDataURL(file); }); const comma = dataUrl.indexOf(","); next.push({ id: crypto.randomUUID(), name: file.name, mimeType: file.type, data: dataUrl.slice(comma + 1), preview: dataUrl, bytes: file.size }); } if ([...selectedImages, ...next].reduce((sum, item) => sum + item.bytes, 0) > 3_000_000) { setDataError("Combined image size must not exceed 3 MB."); return; } setSelectedImages((current) => [...current, ...next]); setDataError(""); }} /><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (preferences.enterToSend && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} />{selectedImages.length > 0 && <div className="image-preview-list" aria-label="Selected images">{selectedImages.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt={image.name} /><span title={image.name}>{image.name}</span><button type="button" onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} aria-label={`Remove ${image.name}`}><X size={13} /></button></div>)}</div>}<div className="composer-tools"><div className="composer-hint"><label className="attach-image" htmlFor="moonex-image-upload" title={model === "moonex-vision-1.5" ? "Attach images" : "Select Vision 1.5 to attach images"}><ImagePlus size={16} /><span>Images</span></label><span>Ask, create, explore</span></div><div className="composer-actions">{preferences.showModelInComposer && <span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span>}{sending ? <button className="send-button stop-button" type="button" onClick={() => requestController.current?.abort()} aria-label="Stop generation" title="Stop generation"><X size={17} /></button> : <button className="send-button" disabled={!draft.trim()} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button>}</div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop settings-backdrop" onClick={() => { setSettingsOpen(false); setSettingsNotice(""); }}><section className="settings-dialog settings-workspace" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
       <header className="settings-heading"><div><span className="settings-eyebrow">MOONEX WORKSPACE</span><h2 id="settings-title">Settings</h2><p>Make Moonex work the way you do.</p></div><button className="icon-button" onClick={() => { setSettingsOpen(false); setSettingsNotice(""); }} aria-label="Close settings"><X size={18} /></button></header>
