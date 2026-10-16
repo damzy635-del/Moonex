@@ -421,6 +421,24 @@ export default function App() {
     const editingIndex = editMessageId && active ? active.messages.findIndex((message) => message.id === editMessageId) : -1;
     const isEditing = editingIndex >= 0 && Boolean(active);
     let persisted = Boolean(user && supabase && active?.persisted);
+    let assistantSaved = false;
+    const persistInterruptedResponse = async (text: string) => {
+      const visibleText = text.trim() ? `${text}\n\n*Generation stopped.*` : "Generation stopped.";
+      if (text.trim() && user && supabase && persisted && !assistantSaved) {
+        const { data: savedAssistant, error } = await supabase.from("messages").insert({
+          conversation_id: conversationId, user_id: user.id, role: "assistant", content: visibleText,
+        }).select("id").single();
+        if (error) throw error;
+        assistantSaved = true;
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, id: savedAssistant.id, content: visibleText } : item),
+        }));
+      } else {
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: visibleText } : item),
+        }));
+      }
+    };
 
     try {
       if (isEditing && active) {
@@ -529,7 +547,7 @@ export default function App() {
       }
 
       if (controller.signal.aborted) {
-        updateAssistant(assistantText ? `${assistantText}\n\n*Generation stopped.*` : "Generation stopped.");
+        await persistInterruptedResponse(assistantText);
         return;
       }
       if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
@@ -538,15 +556,21 @@ export default function App() {
         conversation_id: conversationId, user_id: user.id, role: "assistant", content: assistantText,
       }).select("id").single();
       if (saveAssistantError) throw saveAssistantError;
+      assistantSaved = true;
       setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
         ...chat,
         messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
       }));
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped.*` : "Generation stopped." } : item),
-        }));
+        try {
+          await persistInterruptedResponse(partialAssistantText);
+        } catch (saveError) {
+          setDataError(saveError instanceof Error ? `Generation stopped, but its partial response could not be saved: ${saveError.message}` : "Generation stopped, but its partial response could not be saved.");
+          setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+            ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).*` : "Generation stopped." } : item),
+          }));
+        }
         return;
       }
       const message = error instanceof Error ? error.message : "Could not send this message.";
