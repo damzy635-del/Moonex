@@ -1,69 +1,3 @@
-import tsx --test tests/*.test.ts
-
-✔ chat history tables enforce user ownership and valid content (4.011882ms)
-✔ RLS is enabled for both tables and ownership policies use auth.uid() (0.958425ms)
-✔ authenticated grants do not allow message updates (0.787601ms)
-✔ chat handler aborts before contacting the provider if the response is already closed (3.407161ms)
-✔ chat verifies identity before consuming the shared per-user limiter (3.62196ms)
-✔ production chat fails closed if shared rate limiting is missing or unavailable (0.808396ms)
-✔ chat publishes rate-limit headers and rejects excess requests before provider calls (0.787873ms)
-✔ reconciliation refuses to mutate inconsistent ownership or invalid chat data (4.103372ms)
-✔ reconciliation removes the permissive message catch-all and enforces composite ownership (0.936019ms)
-✔ reconciliation preserves existing schema columns and never deletes or reassigns chat rows (0.717595ms)
-✔ reconciliation accepts the existing system message role (0.680617ms)
-✔ RLS event-trigger function is not exposed as an application RPC (0.678303ms)
-✔ chat handler requires images only for the Vision profile (3.621326ms)
-✔ chat handler attaches validated image parts only to the final Vision user message (0.7873ms)
-✔ Vision model routing remains server-side and uses the profile-specific override (1.073284ms)
-✔ least-privilege migration revokes anonymous access and limits authenticated table grants (3.893755ms)
-✔ public catalog contains exactly the nine Moonex profiles (0.876304ms)
-✔ each text profile selects its own configured Gemini model (0.617872ms)
-✔ profile-specific model falls back to the shared configured model (0.105168ms)
-✔ model routing trims environment values and uses a safe default (0.088735ms)
-✔ unsupported profile IDs cannot select arbitrary upstream models (0.102727ms)
-✔ payment event records are not directly accessible to browser roles (3.459608ms)
-✔ adds indexes for uncovered foreign keys and owner-scoped queries (3.626422ms)
-✔ removes duplicate conversation access and optimizes auth policy expressions (0.920981ms)
-✔ shared limiter allows up to ten requests and rejects the next request (16.023429ms)
-✔ shared limiter uses atomic Redis EVAL with a per-user fixed-window key (0.320533ms)
-✔ limiter fails closed when Redis is unavailable (0.490193ms)
-✔ limiter rejects malformed Redis responses (0.343441ms)
-✔ rate limiter requires both shared-store settings (0.156974ms)
-✔ searchWeb sends a bounded query and returns only valid deduplicated web sources (15.360941ms)
-✔ searchWeb limits query and excerpt size (0.369617ms)
-✔ searchWeb rejects empty queries and upstream failures (0.561234ms)
-✔ Vercel exposes health and model catalog routes alongside chat (3.688868ms)
-✔ accepts supported image MIME types and valid base64 (0.773462ms)
-✔ rejects malformed payloads, unsupported types, and invalid base64 (0.191393ms)
-✔ enforces image count, per-image size, and aggregate size limits (27.785415ms)
-✔ empty images are valid for text profiles but zero-byte image data is rejected (0.650154ms)
-✔ builds Gemini multimodal parts with text first and exact image MIME/data (0.202619ms)
-✔ builds text-only parts when no images are provided (0.108561ms)
-ℹ tests 39
-ℹ suites 0
-ℹ pass 39
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 1041.743769
-
-> moonex@0.1.0 build
-> npm run typecheck && vite build && esbuild server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/index.js
-
-
-> moonex@0.1.0 typecheck
-> tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.server.json
-
-vite v6.4.4 building for production...
-transforming...
-✓ 1750 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/index.html                   0.47 kB │ gzip:   0.31 kB
-dist/assets/index-CURbQ8Qv.css   37.39 kB │ gzip:   8.06 kB
-dist/assets/index-C2wcuCv3.js   550.72 kB │ gzip: 159.04 kB
-✓ built in 1.91s
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { FormEvent } from "react";
@@ -338,22 +272,13 @@ export default function App() {
   }
 
   function retryResponse(chat: Chat, messageIndex: number) {
-    if (sending) return;
-    const previousUser = [...chat.messages.slice(0, messageIndex)].reverse().find((item) => item.role === "user");
+    const previousUser = [...chat.messages.slice(0,messageIndex)].reverse().find((item) => item.role === "user");
     if (!previousUser) return;
-    if (previousUser.images?.length) {
-      setMessageNotice("Regenerating image prompts is not supported yet. Edit the prompt and reattach its images instead.");
-      window.setTimeout(() => setMessageNotice(""), 4000);
-      return;
-    }
-    // Reuse edit-and-resend so regeneration replaces this turn and all later turns,
-    // rather than appending a duplicate user prompt to the conversation.
     setActiveId(chat.id);
-    setEditingMessageId(previousUser.id);
     setDraft(previousUser.content);
-    setMessageNotice("Regenerating this response…");
-    void sendMessage(previousUser.content, previousUser.id);
-    document.querySelector(".composer textarea")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setMessageNotice("Prompt restored to the composer. Send it again to retry.");
+    window.setTimeout(() => setMessageNotice(""), 3500);
+    document.querySelector(".composer textarea")?.scrollIntoView({behavior:"smooth",block:"nearest"});
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -399,7 +324,7 @@ export default function App() {
     document.querySelector(".composer textarea")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  async function sendMessage(value = draft, editMessageId: string | null = editingMessageId) {
+  async function sendMessage(value = draft) {
     const content = value.trim();
     if (!content || sending) return;
     if (selectedImages.length && model !== "moonex-vision-1.5") {
@@ -418,27 +343,9 @@ export default function App() {
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, ...(selectedImages.length ? { images: selectedImages.map(({ id, name, preview }) => ({ id, name, preview })) } : {}) };
     const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
-    const editingIndex = editMessageId && active ? active.messages.findIndex((message) => message.id === editMessageId) : -1;
+    const editingIndex = editingMessageId && active ? active.messages.findIndex((message) => message.id === editingMessageId) : -1;
     const isEditing = editingIndex >= 0 && Boolean(active);
     let persisted = Boolean(user && supabase && active?.persisted);
-    let assistantSaved = false;
-    const persistInterruptedResponse = async (text: string) => {
-      const visibleText = text.trim() ? `${text}\n\n*Generation stopped.*` : "Generation stopped.";
-      if (text.trim() && user && supabase && persisted && !assistantSaved) {
-        const { data: savedAssistant, error } = await supabase.from("messages").insert({
-          conversation_id: conversationId, user_id: user.id, role: "assistant", content: visibleText,
-        }).select("id").single();
-        if (error) throw error;
-        assistantSaved = true;
-        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, id: savedAssistant.id, content: visibleText } : item),
-        }));
-      } else {
-        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: visibleText } : item),
-        }));
-      }
-    };
 
     try {
       if (isEditing && active) {
@@ -547,7 +454,7 @@ export default function App() {
       }
 
       if (controller.signal.aborted) {
-        await persistInterruptedResponse(assistantText);
+        updateAssistant(assistantText ? `${assistantText}\n\n*Generation stopped.*` : "Generation stopped.");
         return;
       }
       if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
@@ -556,21 +463,15 @@ export default function App() {
         conversation_id: conversationId, user_id: user.id, role: "assistant", content: assistantText,
       }).select("id").single();
       if (saveAssistantError) throw saveAssistantError;
-      assistantSaved = true;
       setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
         ...chat,
         messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
       }));
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        try {
-          await persistInterruptedResponse(partialAssistantText);
-        } catch (saveError) {
-          setDataError(saveError instanceof Error ? `Generation stopped, but its partial response could not be saved: ${saveError.message}` : "Generation stopped, but its partial response could not be saved.");
-          setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-            ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).*` : "Generation stopped." } : item),
-          }));
-        }
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped.*` : "Generation stopped." } : item),
+        }));
         return;
       }
       const message = error instanceof Error ? error.message : "Could not send this message.";
@@ -609,7 +510,7 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Regenerate response" aria-label="Regenerate response" disabled={sending} onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}{message.role==="user" && <button title="Edit and resend" aria-label="Edit and resend" disabled={sending} onClick={()=>editMessage(active,message)}><span className="menu-letter">✎</span></button>}</div></div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Retry prompt" aria-label="Retry prompt" onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}{message.role==="user" && <button title="Edit and resend" aria-label="Edit and resend" disabled={sending} onClick={()=>editMessage(active,message)}><span className="menu-letter">✎</span></button>}</div></div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}{messageNotice && <div role="status" className="message-notice">{messageNotice}</div>}
