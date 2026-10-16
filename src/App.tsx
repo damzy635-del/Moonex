@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -164,6 +164,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dataError, setDataError] = useState("");
   const [sending, setSending] = useState(false);
+  const requestController = useRef<AbortController | null>(null);
 
   const loadChats = useCallback(async (userId: string) => {
     if (!supabase) return;
@@ -325,6 +326,9 @@ export default function App() {
     }
     setDataError("");
     setSending(true);
+    const controller = new AbortController();
+    requestController.current = controller;
+    let partialAssistantText = "";
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, ...(selectedImages.length ? { images: selectedImages.map(({ id, name, preview }) => ({ id, name, preview })) } : {}) };
     const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
@@ -373,8 +377,13 @@ export default function App() {
         .map((message) => ({ role: message.role, content: message.content }));
       context.push(userMessage);
 
+      if (controller.signal.aborted) {
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : { ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: "Generation stopped." } : item) }));
+        return;
+      }
       const apiResponse = await fetch("/api/v1/chat", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ modelProfile: model, messages: context, ...(selectedImages.length ? { images: selectedImages.map(({ mimeType, data }) => ({ mimeType, data })) } : {}) }),
       });
@@ -406,6 +415,7 @@ export default function App() {
             const payload = JSON.parse(dataLine) as { text?: string; message?: string };
             if (eventName === "delta" && typeof payload.text === "string") {
               assistantText += payload.text;
+              partialAssistantText = assistantText;
               updateAssistant(assistantText);
             } else if (eventName === "error") {
               throw new Error(payload.message ?? "The AI provider failed.");
@@ -417,6 +427,10 @@ export default function App() {
         reader.releaseLock();
       }
 
+      if (controller.signal.aborted) {
+        updateAssistant(assistantText ? `${assistantText}\n\n*Generation stopped.*` : "Generation stopped.");
+        return;
+      }
       if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
       setSelectedImages([]);
       const { data: savedAssistant, error: saveAssistantError } = await supabase.from("messages").insert({
@@ -428,6 +442,12 @@ export default function App() {
         messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
       }));
     } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped.*` : "Generation stopped." } : item),
+        }));
+        return;
+      }
       const message = error instanceof Error ? error.message : "Could not send this message.";
       setDataError(message);
       setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
@@ -435,6 +455,7 @@ export default function App() {
         messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: `Moonex couldn't complete this response: ${message}` } : item),
       }));
     } finally {
+      if (requestController.current === controller) requestController.current = null;
       setSending(false);
     }
   }
@@ -467,7 +488,7 @@ export default function App() {
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}{messageNotice && <div role="status" className="message-notice">{messageNotice}</div>}
-      <footer className="composer-area"><div className="composer"><input className="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden id="moonex-image-upload" disabled={sending} onChange={async (event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (!files.length) return; if (model !== "moonex-vision-1.5") { setDataError("Select the Vision 1.5 profile before attaching images."); return; } if (selectedImages.length + files.length > 4) { setDataError("Attach no more than 4 images."); return; } const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); const next: SelectedImage[] = []; for (const file of files) { if (!allowed.has(file.type)) { setDataError("Images must be JPEG, PNG, WebP, or GIF."); return; } if (file.size <= 0 || file.size > 1_000_000) { setDataError("Each image must be no larger than 1 MB."); return; } const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image.")); reader.onerror = () => reject(new Error("Could not read image.")); reader.readAsDataURL(file); }); const comma = dataUrl.indexOf(","); next.push({ id: crypto.randomUUID(), name: file.name, mimeType: file.type, data: dataUrl.slice(comma + 1), preview: dataUrl, bytes: file.size }); } if ([...selectedImages, ...next].reduce((sum, item) => sum + item.bytes, 0) > 3_000_000) { setDataError("Combined image size must not exceed 3 MB."); return; } setSelectedImages((current) => [...current, ...next]); setDataError(""); }} /><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (preferences.enterToSend && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} />{selectedImages.length > 0 && <div className="image-preview-list" aria-label="Selected images">{selectedImages.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt={image.name} /><span title={image.name}>{image.name}</span><button type="button" onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} aria-label={`Remove ${image.name}`}><X size={13} /></button></div>)}</div>}<div className="composer-tools"><div className="composer-hint"><label className="attach-image" htmlFor="moonex-image-upload" title={model === "moonex-vision-1.5" ? "Attach images" : "Select Vision 1.5 to attach images"}><ImagePlus size={16} /><span>Images</span></label><span>Ask, create, explore</span></div><div className="composer-actions">{preferences.showModelInComposer && <span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span>}<button className="send-button" disabled={!draft.trim() || sending} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button></div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
+      <footer className="composer-area"><div className="composer"><input className="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden id="moonex-image-upload" disabled={sending} onChange={async (event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; if (!files.length) return; if (model !== "moonex-vision-1.5") { setDataError("Select the Vision 1.5 profile before attaching images."); return; } if (selectedImages.length + files.length > 4) { setDataError("Attach no more than 4 images."); return; } const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); const next: SelectedImage[] = []; for (const file of files) { if (!allowed.has(file.type)) { setDataError("Images must be JPEG, PNG, WebP, or GIF."); return; } if (file.size <= 0 || file.size > 1_000_000) { setDataError("Each image must be no larger than 1 MB."); return; } const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image.")); reader.onerror = () => reject(new Error("Could not read image.")); reader.readAsDataURL(file); }); const comma = dataUrl.indexOf(","); next.push({ id: crypto.randomUUID(), name: file.name, mimeType: file.type, data: dataUrl.slice(comma + 1), preview: dataUrl, bytes: file.size }); } if ([...selectedImages, ...next].reduce((sum, item) => sum + item.bytes, 0) > 3_000_000) { setDataError("Combined image size must not exceed 3 MB."); return; } setSelectedImages((current) => [...current, ...next]); setDataError(""); }} /><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (preferences.enterToSend && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={t("placeholder")} rows={2} disabled={sending} />{selectedImages.length > 0 && <div className="image-preview-list" aria-label="Selected images">{selectedImages.map((image) => <div className="image-preview" key={image.id}><img src={image.preview} alt={image.name} /><span title={image.name}>{image.name}</span><button type="button" onClick={() => setSelectedImages((current) => current.filter((item) => item.id !== image.id))} aria-label={`Remove ${image.name}`}><X size={13} /></button></div>)}</div>}<div className="composer-tools"><div className="composer-hint"><label className="attach-image" htmlFor="moonex-image-upload" title={model === "moonex-vision-1.5" ? "Attach images" : "Select Vision 1.5 to attach images"}><ImagePlus size={16} /><span>Images</span></label><span>Ask, create, explore</span></div><div className="composer-actions">{preferences.showModelInComposer && <span className="selected-model">{MODEL_PROFILES.find((item) => item.id === model)?.label}</span>}{sending ? <button className="send-button stop-button" type="button" onClick={() => requestController.current?.abort()} aria-label="Stop generation" title="Stop generation"><X size={17} /></button> : <button className="send-button" disabled={!draft.trim()} onClick={() => void sendMessage()} aria-label={t("send")}><ArrowUp size={18} /></button>}</div></div></div><p className="disclaimer">{t("disclaimer")} · {user ? "Conversation history syncs to your account." : "Sign in to sync history across devices."} {sending ? "Generating a response…" : "Live AI is available for supported profiles when provider credentials are configured."}</p></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop settings-backdrop" onClick={() => { setSettingsOpen(false); setSettingsNotice(""); }}><section className="settings-dialog settings-workspace" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
       <header className="settings-heading"><div><span className="settings-eyebrow">MOONEX WORKSPACE</span><h2 id="settings-title">Settings</h2><p>Make Moonex work the way you do.</p></div><button className="icon-button" onClick={() => { setSettingsOpen(false); setSettingsNotice(""); }} aria-label="Close settings"><X size={18} /></button></header>
