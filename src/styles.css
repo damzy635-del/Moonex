@@ -284,3 +284,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 /* Stop an in-flight assistant response */
 .stop-button{background:var(--text)!important;color:var(--panel)!important;box-shadow:none!important}
 .stop-button:hover{opacity:.82}
+
+/* Edit-and-resend composer state */
+.editing-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin:0 0 9px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 7%,var(--panel));color:var(--muted);font-size:11px;line-height:1.5}
+.editing-banner button{display:flex;align-items:center;gap:5px;flex:0 0 auto;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font-size:10px}
+.message-actions button:disabled{opacity:.35;cursor:not-allowed}
+@media(max-width:500px){.editing-banner{align-items:flex-start;flex-direction:column}}
