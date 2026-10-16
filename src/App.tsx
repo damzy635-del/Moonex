@@ -272,13 +272,19 @@ export default function App() {
   }
 
   function retryResponse(chat: Chat, messageIndex: number) {
-    const previousUser = [...chat.messages.slice(0,messageIndex)].reverse().find((item) => item.role === "user");
+    if (sending) return;
+    const previousUser = [...chat.messages.slice(0, messageIndex)].reverse().find((item) => item.role === "user");
     if (!previousUser) return;
+    if (previousUser.images?.length) {
+      setMessageNotice("This prompt included images that cannot be restored for regeneration. Edit and reattach the images instead.");
+      window.setTimeout(() => setMessageNotice(""), 4500);
+      return;
+    }
     setActiveId(chat.id);
-    setDraft(previousUser.content);
-    setMessageNotice("Prompt restored to the composer. Send it again to retry.");
+    setEditingMessageId(previousUser.id);
+    setMessageNotice("Regenerating this response and replacing later messages…");
     window.setTimeout(() => setMessageNotice(""), 3500);
-    document.querySelector(".composer textarea")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+    void sendMessage(previousUser.content, previousUser.id);
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -324,7 +330,7 @@ export default function App() {
     document.querySelector(".composer textarea")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  async function sendMessage(value = draft) {
+  async function sendMessage(value = draft, editMessageId: string | null = editingMessageId) {
     const content = value.trim();
     if (!content || sending) return;
     if (selectedImages.length && model !== "moonex-vision-1.5") {
@@ -343,9 +349,27 @@ export default function App() {
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, ...(selectedImages.length ? { images: selectedImages.map(({ id, name, preview }) => ({ id, name, preview })) } : {}) };
     const assistantMessage: Message = { id: crypto.randomUUID(), role: "assistant", content: user && supabase ? "Thinking…" : previewReply };
     let conversationId = active?.id ?? crypto.randomUUID();
-    const editingIndex = editingMessageId && active ? active.messages.findIndex((message) => message.id === editingMessageId) : -1;
+    const editingIndex = editMessageId && active ? active.messages.findIndex((message) => message.id === editMessageId) : -1;
     const isEditing = editingIndex >= 0 && Boolean(active);
     let persisted = Boolean(user && supabase && active?.persisted);
+    let assistantSaved = false;
+    const persistInterruptedResponse = async (text: string) => {
+      const stoppedContent = text.trim() ? `${text}\n\n*Generation stopped.*` : "Generation stopped.";
+      if (text.trim() && user && supabase && persisted && !assistantSaved) {
+        const { data, error } = await supabase.from("messages").insert({
+          conversation_id: conversationId, user_id: user.id, role: "assistant", content: stoppedContent,
+        }).select("id").single();
+        if (error) throw error;
+        assistantSaved = true;
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, id: data.id, content: stoppedContent } : item),
+        }));
+      } else {
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: stoppedContent } : item),
+        }));
+      }
+    };
 
     try {
       if (isEditing && active) {
@@ -454,7 +478,7 @@ export default function App() {
       }
 
       if (controller.signal.aborted) {
-        updateAssistant(assistantText ? `${assistantText}\n\n*Generation stopped.*` : "Generation stopped.");
+        await persistInterruptedResponse(assistantText);
         return;
       }
       if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
@@ -463,15 +487,22 @@ export default function App() {
         conversation_id: conversationId, user_id: user.id, role: "assistant", content: assistantText,
       }).select("id").single();
       if (saveAssistantError) throw saveAssistantError;
+      assistantSaved = true;
       setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
         ...chat,
         messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
       }));
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-          ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped.*` : "Generation stopped." } : item),
-        }));
+        try {
+          await persistInterruptedResponse(partialAssistantText);
+        } catch (saveError) {
+          const reason = saveError instanceof Error ? saveError.message : "unknown persistence error";
+          setDataError(`Generation stopped, but the partial response could not be saved: ${reason}`);
+          setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+            ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).* ` : "Generation stopped (not saved)." } : item),
+          }));
+        }
         return;
       }
       const message = error instanceof Error ? error.message : "Could not send this message.";
@@ -510,7 +541,7 @@ export default function App() {
         {user && <button className="upgrade-button" onClick={() => setSettingsOpen(true)}>Account ↗</button>}
       </div></header>
       <section className="conversation">
-        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Retry prompt" aria-label="Retry prompt" onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}{message.role==="user" && <button title="Edit and resend" aria-label="Edit and resend" disabled={sending} onClick={()=>editMessage(active,message)}><span className="menu-letter">✎</span></button>}</div></div></article>)}</div>
+        {active ? <div className="messages">{active.messages.map((message, index) => <article key={message.id} className={message.role === "user" ? "message user-message" : "message assistant-message"}>{message.role === "assistant" && <div className="assistant-mark"><Sparkles size={15} /></div>}<div className="message-column"><div className="message-content">{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <>{message.images?.length ? <div className="sent-image-list">{message.images.map((image) => <figure className="sent-image" key={image.id}><img src={image.preview} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div> : null}<div>{message.content}</div></>}</div><div className="message-actions"><button title="Copy message" aria-label="Copy message" onClick={()=>void copyMessage(message.content)}><Copy size={14}/></button>{message.role==="assistant" && <button title="Regenerate response" aria-label="Regenerate response" disabled={sending} onClick={()=>retryResponse(active,index)}><RotateCw size={14}/></button>}{message.role==="user" && <button title="Edit and resend" aria-label="Edit and resend" disabled={sending} onClick={()=>editMessage(active,message)}><span className="menu-letter">✎</span></button>}</div></div></article>)}</div>
           : <div className="welcome"><div className="welcome-symbol"><Sparkles size={23} /></div><h1>{t("welcome")}</h1><p>{t("welcomeHint")}</p><div className="starter-grid">{starters.map(([icon, title, prompt]) => <button key={title} className="starter-card" onClick={() => void sendMessage(prompt)}><span className="starter-icon">{icon}</span><span><strong>{title}</strong><small>{prompt}</small></span><ArrowUp size={15} /></button>)}</div></div>}
       </section>
       {dataError && <div role="alert" className="inline-alert">{dataError}</div>}{messageNotice && <div role="status" className="message-notice">{messageNotice}</div>}
