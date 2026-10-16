@@ -280,3 +280,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
  .chat-context-menu{width:180px}
 }
 @media(hover:none){.chat-more,.message-actions{opacity:1}}
+
+/* Stop an in-flight assistant response */
+.stop-button{background:var(--text)!important;color:var(--panel)!important;box-shadow:none!important}
+.stop-button:hover{opacity:.82}
