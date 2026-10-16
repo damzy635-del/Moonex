@@ -428,7 +428,7 @@ export default function App() {
       context.push(userMessage);
 
       if (controller.signal.aborted) {
-        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : { ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: "Generation stopped." } : item) }));
+        await persistInterruptedResponse(partialAssistantText);
         return;
       }
       const apiResponse = await fetch("/api/v1/chat", {
@@ -500,7 +500,7 @@ export default function App() {
           const reason = saveError instanceof Error ? saveError.message : "unknown persistence error";
           setDataError(`Generation stopped, but the partial response could not be saved: ${reason}`);
           setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-            ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).* ` : "Generation stopped (not saved)." } : item),
+            ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).*` : "Generation stopped (not saved)." } : item),
           }));
         }
         return;
