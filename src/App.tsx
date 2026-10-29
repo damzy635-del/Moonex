@@ -353,6 +353,17 @@ export default function App() {
     const isEditing = editingIndex >= 0 && Boolean(active);
     let persisted = Boolean(user && supabase && active?.persisted);
     let assistantSaved = false;
+    let replacementUserSaved = false;
+    const replacedMessageIds = isEditing && active ? active.messages.slice(editingIndex).map((message) => message.id) : [];
+    const removeReplacedMessages = async () => {
+      if (!isEditing || !persisted || !user || !supabase || !replacedMessageIds.length) return;
+      const { error } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).in("id", replacedMessageIds);
+      if (error) setDataError(`The replacement was saved, but the previous version could not be removed: ${error.message}`);
+    };
+    const restoreOriginalMessages = () => {
+      if (!isEditing || !active) return;
+      setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : { ...chat, messages: active.messages }));
+    };
     const persistInterruptedResponse = async (text: string) => {
       const stoppedContent = text.trim() ? `${text}\n\n*Generation stopped.*` : "Generation stopped.";
       if (text.trim() && user && supabase && persisted && !assistantSaved) {
@@ -364,6 +375,7 @@ export default function App() {
         setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
           ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, id: data.id, content: stoppedContent } : item),
         }));
+        await removeReplacedMessages();
       } else {
         setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
           ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: stoppedContent } : item),
@@ -373,13 +385,6 @@ export default function App() {
 
     try {
       if (isEditing && active) {
-        if (persisted && user && supabase) {
-          const removeIds = active.messages.slice(editingIndex).map((message) => message.id);
-          if (removeIds.length) {
-            const { error } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).in("id", removeIds);
-            if (error) throw new Error(`Could not replace this prompt: ${error.message}`);
-          }
-        }
         setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : { ...chat, messages: chat.messages.slice(0, editingIndex) }));
       }
 
@@ -402,6 +407,7 @@ export default function App() {
         }).select("id").single();
         if (insertError) throw insertError;
         userMessage.id = savedUser.id;
+        replacementUserSaved = true;
         persisted = true;
       }
 
@@ -479,6 +485,13 @@ export default function App() {
 
       if (controller.signal.aborted) {
         await persistInterruptedResponse(assistantText);
+        if (isEditing && !assistantSaved) {
+          if (replacementUserSaved && user && supabase && persisted) {
+            const { error: cleanupError } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).eq("id", userMessage.id);
+            if (cleanupError) setDataError(`Generation stopped; the original history is intact, but the replacement prompt could not be removed: ${cleanupError.message}`);
+          }
+          restoreOriginalMessages();
+        }
         return;
       }
       if (!assistantText.trim()) throw new Error("The AI provider returned an empty response.");
@@ -492,6 +505,7 @@ export default function App() {
         ...chat,
         messages: chat.messages.map((message) => message.id === assistantMessage.id ? { ...message, id: savedAssistant.id, content: assistantText } : message),
       }));
+      await removeReplacedMessages();
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         try {
@@ -503,14 +517,29 @@ export default function App() {
             ...chat, messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: partialAssistantText ? `${partialAssistantText}\n\n*Generation stopped (not saved).*` : "Generation stopped (not saved)." } : item),
           }));
         }
+        if (isEditing && !assistantSaved) {
+          if (replacementUserSaved && user && supabase && persisted) {
+            const { error: cleanupError } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).eq("id", userMessage.id);
+            if (cleanupError) setDataError(`Generation stopped; the original history is intact, but the replacement prompt could not be removed: ${cleanupError.message}`);
+          }
+          restoreOriginalMessages();
+        }
         return;
       }
       const message = error instanceof Error ? error.message : "Could not send this message.";
       setDataError(message);
-      setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
-        ...chat,
-        messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: `Moonex couldn't complete this response: ${message}` } : item),
-      }));
+      if (isEditing && !assistantSaved) {
+        if (replacementUserSaved && user && supabase && persisted) {
+          const { error: cleanupError } = await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", user.id).eq("id", userMessage.id);
+          if (cleanupError) setDataError(`${message} The original history is intact, but the replacement prompt could not be removed: ${cleanupError.message}`);
+        }
+        restoreOriginalMessages();
+      } else {
+        setChats((current) => current.map((chat) => chat.id !== conversationId ? chat : {
+          ...chat,
+          messages: chat.messages.map((item) => item.id === assistantMessage.id ? { ...item, content: `Moonex couldn't complete this response: ${message}` } : item),
+        }));
+      }
     } finally {
       if (requestController.current === controller) requestController.current = null;
       setSending(false);
