@@ -106,7 +106,7 @@ export async function requestProvider(
           ]
         : [{ text: message.content }],
     }));
-    return fetch(`${config.baseUrl}/models/${encodeURIComponent(candidate.model)}:streamGenerateContent?alt=sse`, {
+    return fetch(config.baseUrl + "/models/" + encodeURIComponent(candidate.model) + ":streamGenerateContent?alt=sse", {
       method: "POST", headers: { "Content-Type":"application/json", "x-goog-api-key":candidate.key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: request.systemPrompt }] },
@@ -124,15 +124,15 @@ export async function requestProvider(
             { type:"text", text:message.content },
             ...request.images.map((image) => ({
               type:"image_url",
-              image_url:{ url:`data:${image.mimeType};base64,${image.data}` },
+              image_url:{ url:"data:" + image.mimeType + ";base64," + image.data },
             })),
           ]
         : message.content,
     })),
   ];
-  return fetch(`${config.baseUrl}/chat/completions`, {
+  return fetch(config.baseUrl + "/chat/completions", {
     method:"POST",
-    headers:{ "Content-Type":"application/json", Authorization:`Bearer ${candidate.key}` },
+    headers:{ "Content-Type":"application/json", Authorization:"Bearer " + candidate.key },
     body:JSON.stringify({ model:candidate.model, messages, stream:true, max_tokens:2048 }),
     signal:request.signal,
   });
