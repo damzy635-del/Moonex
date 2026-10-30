@@ -257,35 +257,12 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       response.end();
     }
   } catch {
-      // Ignore malformed provider chunks; never forward raw provider payloads to clients.
-    }
-  };
-  try {
-    while (true) {
-      if (clientAbort.signal.aborted || response.destroyed) {
-        await reader.cancel().catch(() => undefined);
-        return;
-      }
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) processLine(line);
-    }
-    buffer += decoder.decode();
-    if (buffer.trim()) processLine(buffer);
+    // Once streaming begins, never switch providers: doing so could replay partial output.
     if (!clientAbort.signal.aborted && !response.destroyed) {
-      response.write("event: done\ndata: {}\n\n");
-      response.end();
-    }
-  } catch {
-    if (!clientAbort.signal.aborted && !response.destroyed) {
-      response.write("event: error\ndata: " + JSON.stringify({ message: "The AI response stream was interrupted. Please try again." }) + "\n\n");
+      response.write("event: error\\ndata: " + JSON.stringify({ message: "The AI response stream was interrupted. Please try again." }) + "\\n\\n");
       response.end();
     }
   } finally {
     response.off?.("close", abortIfClientDisconnected);
-    reader.releaseLock();
   }
 }
