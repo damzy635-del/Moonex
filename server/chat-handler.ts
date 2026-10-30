@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { createChatRateLimiter } from "./rate-limit.js";
-import { resolveGeminiModel } from "./model-routing.js";
 import { resolveAutoProfile } from "./auto-router.js";
 import { searchWeb, type ResearchSource } from "./research-search.js";
-import { buildVisionParts, validateVisionImages } from "./vision-input.js";
+import { validateVisionImages } from "./vision-input.js";
+import { getProviderCandidates, requestProvider, readProviderStream, type MoonexProfile, type ProviderCandidate } from "./provider-adapters.js";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ApiRequest = {
@@ -169,12 +169,6 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    sendError(response, 503, "PROVIDER_NOT_CONFIGURED", "Live chat is not configured. Add GEMINI_API_KEY to the server environment.");
-    return;
-  }
-
   let researchSources: ResearchSource[] = [];
   let researchContext = "";
   if (profile === "moonex-research-1.5") {
@@ -195,94 +189,74 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     }
   }
 
-  // Configure the model server-side. Never accept upstream model IDs from the browser.
-  const model = resolveGeminiModel(profile);
+  // Resolve eligible providers server-side. Credentials and capability checks happen here.
+  const candidates = getProviderCandidates(profile as MoonexProfile);
+  if (!candidates.length) {
+    sendError(response, 503, "PROVIDER_NOT_CONFIGURED", "No configured AI provider supports this request. Configure a provider API key on the server.");
+    return;
+  }
   const clientAbort = new AbortController();
   const abortIfClientDisconnected = () => {
     if (response.destroyed || response.writableEnded) clientAbort.abort();
   };
   response.on?.("close", abortIfClientDisconnected);
-  // A response may already be closed before this handler registers its listener.
-  // Detect that race before starting a billable upstream provider request.
   abortIfClientDisconnected();
   if (clientAbort.signal.aborted) {
     response.off?.("close", abortIfClientDisconnected);
     return;
   }
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with each source as a Markdown link in the form [Source title](https://example.com/path), using the exact supplied URL. Do not cite sources that were not supplied." : ""}` }],
-          },
-          contents: messages.map((message, index) => ({
-            role: message.role === "assistant" ? "model" : "user",
-            parts: profile === "moonex-vision-1.5" && index === messages.length - 1
-              ? buildVisionParts(message.content, images)
-              : [{ text: message.content + (profile === "moonex-research-1.5" && index === messages.length - 1 ? researchContext : "") }],
-          })),
-          generationConfig: { maxOutputTokens: 2048 },
-        }),
-        signal: AbortSignal.any([AbortSignal.timeout(60_000), clientAbort.signal]),
-      },
-    );
-  } catch {
+  const systemPrompt = `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with each source as a Markdown link in the form [Source title](https://example.com/path), using the exact supplied URL. Do not cite sources that were not supplied." : ""}`;
+  const providerRequest = {
+    profile: profile as MoonexProfile, messages, systemPrompt, images,
+    signal: AbortSignal.any([AbortSignal.timeout(60_000), clientAbort.signal]),
+  };
+  let upstream: Response | undefined;
+  let selectedProvider: ProviderCandidate | undefined;
+  let lastProviderStatus = 0;
+  for (const candidate of candidates) {
+    if (clientAbort.signal.aborted) break;
+    try {
+      const attempt = await requestProvider(candidate, providerRequest);
+      if (attempt.ok && attempt.body) {
+        upstream = attempt;
+        selectedProvider = candidate;
+        break;
+      }
+      lastProviderStatus = attempt.status;
+      await attempt.body?.cancel().catch(() => undefined);
+      // Retry only before a stream has been accepted and any output emitted.
+      if (attempt.status !== 429 && attempt.status < 500 && attempt.status !== 401 && attempt.status !== 403) break;
+    } catch {
+      if (clientAbort.signal.aborted) break;
+    }
+  }
+  if (!upstream || !selectedProvider) {
     response.off?.("close", abortIfClientDisconnected);
     if (clientAbort.signal.aborted || response.destroyed) return;
-    sendError(response, 502, "PROVIDER_UNAVAILABLE", "Moonex could not reach the AI provider. Please try again.");
-    return;
-  }
-
-  if (!upstream.ok) {
-    response.off?.("close", abortIfClientDisconnected);
-    if (upstream.status === 401 || upstream.status === 403) {
-      sendError(response, 502, "PROVIDER_AUTH_FAILED", "The Gemini API key was rejected. Check GEMINI_API_KEY in the server environment.");
-    } else if (upstream.status === 429) {
-      sendError(response, 429, "PROVIDER_RATE_LIMITED", "Gemini has reached a rate or quota limit. Try again later.");
-    } else {
-      sendError(response, 502, "PROVIDER_REQUEST_FAILED", "Gemini could not complete the request. Check the configured model and try again.");
-    }
-    return;
-  }
-
-  if (!upstream.body) {
-    response.off?.("close", abortIfClientDisconnected);
-    sendError(response, 502, "EMPTY_PROVIDER_STREAM", "Gemini returned an empty response stream.");
+    if (lastProviderStatus === 429) sendError(response, 429, "PROVIDER_RATE_LIMITED", "Configured AI providers are currently rate-limited. Try again later.");
+    else sendError(response, 502, "PROVIDERS_UNAVAILABLE", "No configured AI provider could complete this request. Check provider credentials, model access, and quotas.");
     return;
   }
 
   response.setHeader("X-Moonex-Profile", profile);
-  response.setHeader("X-Moonex-Provider", "google");
+  response.setHeader("X-Moonex-Provider", selectedProvider.id);
+  response.setHeader("X-Moonex-Upstream-Model", selectedProvider.model);
   response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   response.setHeader("Cache-Control", "no-cache, no-transform");
   response.setHeader("Connection", "keep-alive");
   response.setHeader("X-Accel-Buffering", "no");
 
-  const reader = upstream.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const processLine = (line: string) => {
-    if (!line.startsWith("data:")) return;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === "[DONE]") return;
-    try {
-      const chunk = JSON.parse(payload) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-      const text = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-      if (text && !clientAbort.signal.aborted && !response.destroyed) {
-        response.write("event: delta\ndata: " + JSON.stringify({ text }) + "\n\n");
+  try {
+    await readProviderStream(upstream, selectedProvider.id, (text) => {
+      if (!clientAbort.signal.aborted && !response.destroyed) {
+        response.write("event: delta\\ndata: " + JSON.stringify({ text }) + "\\n\\n");
       }
-    } catch {
+    });
+    if (!clientAbort.signal.aborted && !response.destroyed) {
+      response.write("event: done\\ndata: {}\\n\\n");
+      response.end();
+    }
+  } catch {
       // Ignore malformed provider chunks; never forward raw provider payloads to clients.
     }
   };
