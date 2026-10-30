@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createChatRateLimiter } from "./rate-limit.js";
 import { resolveGeminiModel } from "./model-routing.js";
+import { resolveAutoProfile } from "./auto-router.js";
 import { searchWeb, type ResearchSource } from "./research-search.js";
 import { buildVisionParts, validateVisionImages } from "./vision-input.js";
 
@@ -113,32 +114,14 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     }
   }
 
-  const body = request.body as { modelProfile?: unknown; messages?: unknown } | null;
-  const profile = typeof body?.modelProfile === "string" ? body.modelProfile : "";
+  const body = request.body as { modelProfile?: unknown; autoRoute?: unknown; messages?: unknown } | null;
+  const requestedProfile = typeof body?.modelProfile === "string" ? body.modelProfile : "";
   const imageResult = validateVisionImages((body as { images?: unknown } | null)?.images);
   if (imageResult.error) {
     sendError(response, 400, "INVALID_IMAGES", imageResult.error);
     return;
   }
   const images = imageResult.images;
-  if (images.length && profile !== "moonex-vision-1.5") {
-    sendError(response, 400, "IMAGES_REQUIRE_VISION", "Select the Vision profile to send images.");
-    return;
-  }
-  if (profile === "moonex-vision-1.5" && images.length === 0) {
-    sendError(response, 400, "VISION_IMAGE_REQUIRED", "Attach at least one image to use the Vision profile.");
-    return;
-  }
-  if (!enabledProfiles.has(profile)) {
-    const code = "UNKNOWN_MODEL_PROFILE";
-    sendError(
-      response,
-      400,
-      code,
-      "Choose a valid Moonex model profile.",
-    );
-    return;
-  }
 
   if (!Array.isArray(body?.messages) || body.messages.length === 0 || body.messages.length > 60) {
     sendError(response, 400, "INVALID_MESSAGES", "Provide between 1 and 60 chat messages.");
@@ -167,6 +150,22 @@ export default async function handler(request: ApiRequest, response: ApiResponse
   }
   if (messages[messages.length - 1]?.role !== "user") {
     sendError(response, 400, "INVALID_MESSAGES", "The final message must be from the user.");
+    return;
+  }
+
+  const profile = body?.autoRoute === true || !requestedProfile
+    ? resolveAutoProfile({ prompt: messages[messages.length - 1].content, history: messages.slice(0, -1), hasImages: images.length > 0 })
+    : requestedProfile;
+  if (!enabledProfiles.has(profile)) {
+    sendError(response, 400, "UNKNOWN_MODEL_PROFILE", "Choose a valid Moonex model profile.");
+    return;
+  }
+  if (images.length && profile !== "moonex-vision-1.5") {
+    sendError(response, 400, "IMAGES_REQUIRE_VISION", "Image requests must use the Vision capability.");
+    return;
+  }
+  if (profile === "moonex-vision-1.5" && images.length === 0) {
+    sendError(response, 400, "VISION_IMAGE_REQUIRED", "Vision requests require at least one image.");
     return;
   }
 
@@ -261,6 +260,8 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     return;
   }
 
+  response.setHeader("X-Moonex-Profile", profile);
+  response.setHeader("X-Moonex-Provider", "google");
   response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   response.setHeader("Cache-Control", "no-cache, no-transform");
   response.setHeader("Connection", "keep-alive");
