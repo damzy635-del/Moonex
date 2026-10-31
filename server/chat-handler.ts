@@ -205,7 +205,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     response.off?.("close", abortIfClientDisconnected);
     return;
   }
-  const systemPrompt = `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with each source as a Markdown link in the form [Source title](https://example.com/path), using the exact supplied URL. Do not cite sources that were not supplied." : ""}`;
+  const systemPrompt = `You are Moonex, a helpful AI assistant. Follow this response style: ${profileInstructions[profile]}${profile === "moonex-research-1.5" ? " Use numbered citations [1], [2] that map exactly to the supplied source list. Include a Sources section with each source as a Markdown link in the form [Source title](https://example.com/path), using the exact supplied URL. Do not cite sources that were not supplied." : ""}${researchContext}`;
   const providerRequest = {
     profile: profile as MoonexProfile, messages, systemPrompt, images,
     signal: AbortSignal.any([AbortSignal.timeout(60_000), clientAbort.signal]),
