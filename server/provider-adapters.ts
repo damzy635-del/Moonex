@@ -134,7 +134,7 @@ export async function requestProvider(
   return fetch(config.baseUrl + "/chat/completions", {
     method:"POST",
     headers:{ "Content-Type":"application/json", Authorization:"Bearer " + candidate.key },
-    body:JSON.stringify({ model:candidate.model, messages, stream:true, max_tokens:2048 }),
+    body:JSON.stringify({ model:candidate.model, messages, stream:true, ...(candidate.id === "openai" && /^o[1-9]/i.test(candidate.model) ? { max_completion_tokens:2048 } : { max_tokens:2048 }) }),
     signal:request.signal,
   });
 }
