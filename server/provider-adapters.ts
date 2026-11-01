@@ -83,7 +83,7 @@ export function getProviderCandidates(
     const config = providers[id];
     const key = env[config.key]?.trim();
     if (!key || (profile === "moonex-vision-1.5" && !config.vision)) return [];
-    const profileOverrideName = "MOONEX_" + id.toUpperCase() + "_MODEL_" + profile.replaceAll("-", "_").toUpperCase();
+    const profileOverrideName = "MOONEX_" + id.toUpperCase() + "_MODEL_" + profile.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").toUpperCase();
     const profileOverride = env[profileOverrideName]?.trim();
     const legacyOverride = id === "google" ? env[legacyGeminiEnv[profile] ?? ""]?.trim() : "";
     const genericOverride = id === "google" ? env.GEMINI_MODEL?.trim() : "";
